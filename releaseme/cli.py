@@ -43,9 +43,7 @@ def _main():
         return tuple(int(p) for p in v1.removeprefix("v").split(".")) < tuple(int(p) for p in v2.removeprefix("v").split("."))
 
     PACKAGE_NAME = get_package_name()  # The TOML definitely exists. Question is whether it is correctly formed.
-    if input(f"✅ Identified package '{PACKAGE_NAME}'.\n⚠️ Are you sure this is the package you want to release? ([y]/n) ").lower() == "n":
-        print(f"❌ User abort.")
-        sys.exit(1)
+    print(f"✅ Identified package '{PACKAGE_NAME}'.")
 
     CURRENT_VERSION = get_last_version_tag()
     if CURRENT_VERSION is not None:
@@ -103,6 +101,10 @@ def _main():
                              f'{args.runtime_variable_name} = "{version}"', content)
         PATH_VARIABLE.write_text(new_content)
         print(f"✅ Updated {PATH_VARIABLE.name} to version {version}")
+
+    if input(f"⚠️ Are you sure you want to release the above as version '{NEW_VERSION}' of package '{PACKAGE_NAME}'? ([y]/n) ").lower() == "n":
+        print(f"❌ User abort.")
+        sys.exit(1)
 
     update_pyproject(NEW_VERSION)
     update_variable(NEW_VERSION)
