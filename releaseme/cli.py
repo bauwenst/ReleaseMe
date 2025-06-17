@@ -12,12 +12,11 @@ def _main():
 
     print()  # Newline
 
-    # Parse arguments
+    # Define arguments. They are only parsed after we print the current version.
     parser = argparse.ArgumentParser(description="Push a new tagged version of a Python package.")
     parser.add_argument("version", type=str, help="New version number.")
     parser.add_argument("--runtime_variable_path", type=Path, help="Path to the file where the version is defined in a variable.")
     parser.add_argument("--runtime_variable_name", type=str, help="Name of the variable whose value should be set to the current version.", default="__version__")
-    args = parser.parse_args()
 
     # Sanity check: are we even in a Python package tracked by Git?
     PATH_GIT  = Path(".git")
@@ -49,7 +48,11 @@ def _main():
         sys.exit(1)
 
     CURRENT_VERSION = get_last_version_tag()
-    NEW_VERSION     = args.version.strip()
+    if CURRENT_VERSION is not None:
+        print(f"✅ Identified current version '{CURRENT_VERSION}'.")
+
+    args = parser.parse_args()
+    NEW_VERSION = args.version.strip()
     if CURRENT_VERSION is not None:
         if is_numeric_version_tag(CURRENT_VERSION) and is_numeric_version_tag(NEW_VERSION):  # These checks are immune to a 'v' prefix.
             if is_version_lower(NEW_VERSION, CURRENT_VERSION):  # Idem.
@@ -57,8 +60,6 @@ def _main():
                 sys.exit(1)
             if CURRENT_VERSION.startswith("v") and not NEW_VERSION.startswith("v"):
                 NEW_VERSION = "v" + NEW_VERSION
-
-        print(f"✅ Identified current version '{CURRENT_VERSION}'.")
     else:
         if is_numeric_version_tag(NEW_VERSION) and not NEW_VERSION.startswith("v"):
             NEW_VERSION = "v" + NEW_VERSION
