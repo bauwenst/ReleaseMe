@@ -23,7 +23,7 @@ jobs:
 
       - name: Check version matches tag
         run: |
-          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          TAG_VERSION=${GITHUB_REF#refs/*/}
           PROJECT_VERSION=$(hatch version)
 
           echo "Git tag version: $TAG_VERSION"
