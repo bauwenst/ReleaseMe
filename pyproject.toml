@@ -1,6 +1,6 @@
 [project]
 name = "releaseme"
-version = "v1.1.1"
+version = "v1.1.2"
 description = "CLI tool for creating git-tagged versions of Python packages where the version has to be specified exactly once."
 authors = [{name = "Thomas Bauwens", email = "thomas.bauwens@kuleuven.be"}]
 dependencies = []
