@@ -78,8 +78,9 @@ def _main():
 
     # - Can we find the old and new tags?
     def get_last_version_tag() -> Optional[str]:
+        """Note: this does NOT use the TOML. It looks for a Git tag because we want to know which commits have been done."""
         try:
-            return subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], text=True).strip()
+            return subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], text=True, stderr=subprocess.DEVNULL).strip()  # stderr is rerouted because otherwise you will get a "fatal: ..." message for the first version.
         except subprocess.CalledProcessError:
             return None
 
@@ -158,9 +159,9 @@ def _main():
 
     # Save changes with Git.
     def git_commit_tag_push(version: str, notes: str):
-        try:  # TODO: I wonder if you can pretty-print these calls (e.g. with an indent). Using quote(subprocess.check_output(text=True)) does not work at all, probably because these calls are TQDM-esque.
+        try:  # TODO: I wonder if you can pretty-print these calls (e.g. with an indent). Using quote(subprocess.check_output(text=True)) does not work at all, probably because these calls are TQDM-esque. I wonder if they are written to stderr, which you can reroute to stdout.
             print("="*50)
-            subprocess.run(["git", "add", "pyproject.toml", PATH_VARIABLE.as_posix()], check=True)
+            subprocess.run(["git", "add", "pyproject.toml", PATH_VARIABLE.as_posix()], check=True)  #, stderr=subprocess.STDOUT)
             subprocess.run(["git", "commit", "-m", f"🔖 Release {version}\n\n{notes}"], check=True)
             subprocess.run(["git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], check=True)
             subprocess.run(["git", "push"], check=True)
