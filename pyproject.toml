@@ -1,13 +1,16 @@
 [project]
-name = "releaseme"
+name = "cli_release-me"  # This is actually the name of the package on PyPI, whereas the name we import is the name of the folder containing our package.
 version = "v1.1.2"
 description = "CLI tool for creating git-tagged versions of Python packages where the version has to be specified exactly once."
 authors = [{name = "Thomas Bauwens", email = "thomas.bauwens@kuleuven.be"}]
 dependencies = []
 
 [project.scripts]
-release-version = "releaseme.cli:_main"
+releaseme = "releaseme._cli:_main"
 
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]  # Better than setuptools for separating distribution name from package name.
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["./releaseme"]  # This is the path where the code is, which also determines by what name you import it (theoretically).
