@@ -3,6 +3,7 @@
 
 def _main():
     import argparse
+    import os
     import re
     import sys
     import tomllib
@@ -26,10 +27,56 @@ def _main():
         sys.exit(1)
 
     # Inspect the package for its name and version.
-    def get_package_name() -> str:
+    # - The TOML definitely exists. Question is whether it is correctly formed.
+    def get_distribution_name() -> str:
         with open(PATH_TOML, "rb") as handle:
-            return tomllib.load(handle)["project"]["name"]
+            try:
+                return tomllib.load(handle)["project"]["name"]
+            except:
+                print("❌ Missing project name in TOML.")
+                sys.exit(1)
 
+    DISTRIBUTION_NAME = get_distribution_name()
+    print(f"✅ Identified distribution: {DISTRIBUTION_NAME}")
+
+    # - And even with a project name, can we find the source code?
+    def get_package_path() -> Path:
+        with open(PATH_TOML, "rb") as handle:
+            try:  # This is most specific and hence has precedent.
+                package = Path(tomllib.load(handle)["tool.hatch.build.targets.wheel"]["packages"][0])
+            except:
+                # If there is a ./src/, it is always investigated.
+                parent_of_package = Path("./src/")
+                if not parent_of_package.is_dir():
+                    parent_of_package = parent_of_package.parent
+
+                # Now, if there is a folder here with the same name as the distribution, that has to be it.
+                _, subfolders, _ = next(os.walk(parent_of_package))
+                subfolders = [f for f in subfolders if not f.startswith(".") and not f.startswith("_") and not f.endswith(".egg-info")]
+
+                if DISTRIBUTION_NAME in subfolders:
+                    package = parent_of_package / DISTRIBUTION_NAME
+                # Or, if there is only one subfolder, that's likely it.
+                elif len(subfolders) == 1:
+                    package = parent_of_package / subfolders[0]
+                else:
+                    print("❌ Could not find package name.")
+                    sys.exit(1)
+
+        # Verify that this folder contains an __init__.py as a sanity check that it is actually a Python module.
+        if not (package / "__init__.py").is_file():
+            print(f"❌ Missing __init__.py in supposed package root {package.as_posix()}!")
+            sys.exit(1)
+
+        return package
+
+    def get_package_name() -> str:
+        return get_package_path().name
+
+    PACKAGE_NAME = get_package_name()
+    print(f"✅ Identified package: {PACKAGE_NAME}")
+
+    # - Can we find the old and new tags?
     def get_last_version_tag() -> Optional[str]:
         try:
             return subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], text=True).strip()
@@ -42,12 +89,9 @@ def _main():
     def is_version_lower(v1: str, v2: str):
         return tuple(int(p) for p in v1.removeprefix("v").split(".")) < tuple(int(p) for p in v2.removeprefix("v").split("."))
 
-    PACKAGE_NAME = get_package_name()  # The TOML definitely exists. Question is whether it is correctly formed.
-    print(f"✅ Identified package '{PACKAGE_NAME}'.")
-
     CURRENT_VERSION = get_last_version_tag()
     if CURRENT_VERSION is not None:
-        print(f"✅ Identified current version '{CURRENT_VERSION}'.")
+        print(f"✅ Identified current version: {CURRENT_VERSION}")
 
     args = parser.parse_args()
     NEW_VERSION = args.version.strip()
@@ -80,9 +124,12 @@ def _main():
         return "".join("- " + title + "\n"
                        for title in commit_titles if title)
 
+    def quote(s: str) -> str:
+        return "\n".join("   | " + line for line in [""] + s.strip().split("\n") + [""])
+
     notes = generate_release_notes(CURRENT_VERSION)
-    print(f"📝 Generated release notes since {CURRENT_VERSION or 'initial commit'}:\n")
-    print(notes, "\n")
+    print(f"✅ Generated release notes since {CURRENT_VERSION or 'initial commit'}:")
+    print(quote(notes))
 
     # Update all mentions of the version in the project files.
     def update_pyproject(version: str):
@@ -91,7 +138,7 @@ def _main():
         PATH_TOML.write_text(new_content)
         print(f"✅ Updated pyproject.toml to version {version}")
 
-    PATH_VARIABLE = args.runtime_variable_path or Path(("src/" if Path("src/").is_dir() else "") + f"{PACKAGE_NAME}/__init__.py")
+    PATH_VARIABLE = args.runtime_variable_path or get_package_path() / "__init__.py"
     def update_variable(version: str):
         if not PATH_VARIABLE.exists():
             print(f"⚠️ {PATH_VARIABLE.name} not found; skipping {args.runtime_variable_name} update")
@@ -102,7 +149,7 @@ def _main():
         PATH_VARIABLE.write_text(new_content)
         print(f"✅ Updated {PATH_VARIABLE.name} to version {version}")
 
-    if input(f"⚠️ Are you sure you want to release the above as version '{NEW_VERSION}' of package '{PACKAGE_NAME}'? ([y]/n) ").lower() == "n":
+    if input(f"⚠️ Please confirm that you want to release the above details as follows:\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version: {NEW_VERSION}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() == "n":
         print(f"❌ User abort.")
         sys.exit(1)
 
@@ -111,11 +158,19 @@ def _main():
 
     # Save changes with Git.
     def git_commit_tag_push(version: str, notes: str):
-        subprocess.run(["git", "add", "pyproject.toml", PATH_VARIABLE.as_posix()], check=True)
-        subprocess.run(["git", "commit", "-m", f"🔖 Release {version}\n\n{notes}"], check=True)
-        subprocess.run(["git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], check=True)
-        subprocess.run(["git", "push"], check=True)
-        subprocess.run(["git", "push", "origin", f"{version}"], check=True)
+        try:
+            print(quote(
+                subprocess.check_output(["git", "add", "pyproject.toml", PATH_VARIABLE.as_posix()], text=True) + \
+                subprocess.check_output(["git", "commit", "-m", f"🔖 Release {version}\n\n{notes}"], text=True) + \
+                subprocess.check_output(["git", "push"], text=True)
+            ))
+            print(quote(
+                subprocess.check_output(["git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], text=True) + \
+                subprocess.check_output(["git", "push", "origin", f"{version}"], text=True)
+            ))
+        except:
+            print(f"❌ Failed to save to Git.")
+            raise
         print(f"✅ Committed, tagged, and pushed version {version} with release notes.")
 
     git_commit_tag_push(NEW_VERSION, notes)
