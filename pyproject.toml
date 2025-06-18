@@ -6,7 +6,7 @@ authors = [{name = "Thomas Bauwens", email = "thomas.bauwens@kuleuven.be"}]
 dependencies = []
 
 [project.scripts]
-releaseme = "releaseme._cli:_main"
+releaseme = "releaseme._cli:_main"  # Left-hand side is the name of the command-line utility to create. Right-hand side is which file and which function it runs.
 
 [build-system]
 requires = ["hatchling"]  # Better than setuptools for separating distribution name from package name.

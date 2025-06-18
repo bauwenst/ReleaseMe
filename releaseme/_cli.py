@@ -28,15 +28,36 @@ def _main():
 
     # Inspect the package for its name and version.
     # - The TOML definitely exists. Question is whether it is correctly formed.
-    def get_distribution_name() -> str:
-        with open(PATH_TOML, "rb") as handle:
+    def parse_toml() -> dict:
+        try:
+            with open(PATH_TOML, "rb") as handle:
+                return tomllib.load(handle)
+        except:
+            print("❌ Cannot parse TOML.")
+            sys.exit(1)
+
+    def get_toml_name() -> str:
+        try:
+            return parse_toml()["project"]["name"]
+        except:
+            print("❌ Missing project name in TOML.")
+            sys.exit(1)
+
+    def get_toml_version() -> Optional[str]:
+        toml = parse_toml()
+        try:
+            return toml["project"]["version"]
+        except:
             try:
-                return tomllib.load(handle)["project"]["name"]
+                if "version" in toml["project"]["dynamic"]:
+                    return None
+                else:
+                    raise
             except:
-                print("❌ Missing project name in TOML.")
+                print("❌ Missing version in TOML.")
                 sys.exit(1)
 
-    DISTRIBUTION_NAME = get_distribution_name()
+    DISTRIBUTION_NAME = get_toml_name()
     print(f"✅ Identified distribution: {DISTRIBUTION_NAME}")
 
     # - And even with a project name, can we find the source code?
@@ -90,22 +111,32 @@ def _main():
     def is_version_lower(v1: str, v2: str):
         return tuple(int(p) for p in v1.removeprefix("v").split(".")) <= tuple(int(p) for p in v2.removeprefix("v").split("."))
 
-    CURRENT_VERSION = get_last_version_tag()
-    if CURRENT_VERSION is not None:
-        print(f"✅ Identified current version: {CURRENT_VERSION}")
+    # - Is there a precedent, either as a Git tag or in the TOML?
+    ADMIN_VERSION = get_toml_version()  # Only use for this is that IF it is numeric, it will (1) enforce that the new tag is at least as large and (2) enforce a 'v' prefix.
+    OLD_TAG = get_last_version_tag()
+    OLD_VERSION = OLD_TAG or ADMIN_VERSION  # Can be None!
+    if OLD_VERSION is not None:
+        if OLD_VERSION == OLD_TAG:
+            print(f"✅ Identified official version: {OLD_TAG}")
+            if ADMIN_VERSION != OLD_TAG:
+                print(f"⚠️ Version found in TOML ({ADMIN_VERSION}) differs from Git tag ({OLD_TAG}). Only the Git tag will be considered.")
+        else:  # There is a version given in the TOML, but it was just never used to create a Git tag.
+            print(f"✅ Identified unofficial version: {ADMIN_VERSION}")
 
     args = parser.parse_args()
-    NEW_VERSION = args.version.strip()
-    if CURRENT_VERSION is not None:
-        if is_numeric_version_tag(CURRENT_VERSION) and is_numeric_version_tag(NEW_VERSION):  # These checks are immune to a 'v' prefix.
-            if is_version_lower(NEW_VERSION, CURRENT_VERSION):  # Idem.
-                print(f"❌ Cannot use new version {NEW_VERSION} since it is lower than (or equal to) the current version.")
+    NEW_TAG = args.version.strip()
+    if OLD_VERSION is not None:
+        if is_numeric_version_tag(OLD_VERSION) and is_numeric_version_tag(NEW_TAG):  # These checks are immune to a 'v' prefix.
+            if is_version_lower(NEW_TAG, OLD_VERSION):  # Idem.
+                print(f"❌ Cannot use new version {NEW_TAG} since it is lower than (or equal to) the current version {OLD_VERSION}!")
                 sys.exit(1)
-            if CURRENT_VERSION.startswith("v") and not NEW_VERSION.startswith("v"):
-                NEW_VERSION = "v" + NEW_VERSION
-    else:
-        if is_numeric_version_tag(NEW_VERSION) and not NEW_VERSION.startswith("v"):
-            NEW_VERSION = "v" + NEW_VERSION
+            if OLD_VERSION.startswith("v") and not NEW_TAG.startswith("v"):
+                NEW_TAG = "v" + NEW_TAG
+            elif not OLD_VERSION.startswith("v") and NEW_TAG.startswith("v"):
+                print(f"⚠️ New version ({NEW_TAG}) starts with 'v' unlike the previous version ({OLD_VERSION}). Maybe this is undesired.")
+    else:  # If no information is known about versioning policies before this run, we assume the user wants a 'v' prefix for numeric versions.
+        if is_numeric_version_tag(NEW_TAG) and not NEW_TAG.startswith("v"):
+            NEW_TAG = "v" + NEW_TAG
 
     # Summarise the commits since the last tag.
     def generate_release_notes(from_tag: Optional[str]):
@@ -118,7 +149,7 @@ def _main():
         sep = "<<END>>"
         log = subprocess.check_output(["git", "log", range_spec, f"--pretty=format:%B{sep}"], text=True).strip()
         if not log:
-            print(f"❌ No changes were made since the last version ({CURRENT_VERSION})!")
+            print(f"❌ No changes were made since the last version ({OLD_TAG})!")
             sys.exit(1)
 
         commit_titles = [s.strip().split("\n")[0] for s in log.split(sep)]
@@ -128,8 +159,8 @@ def _main():
     def quote(s: str) -> str:
         return "\n".join("   | " + line for line in [""] + s.strip().split("\n") + [""])
 
-    notes = generate_release_notes(CURRENT_VERSION)
-    print(f"✅ Generated release notes since {CURRENT_VERSION or 'initial commit'}:")
+    notes = generate_release_notes(OLD_TAG)
+    print(f"✅ Generated release notes since {OLD_TAG or 'initial commit'}:")
     print(quote(notes))
 
     # Update all mentions of the version in the project files.
@@ -150,12 +181,12 @@ def _main():
         PATH_VARIABLE.write_text(new_content)
         print(f"✅ Updated {PATH_VARIABLE.name} to version {version}")
 
-    if input(f"⚠️ Please confirm that you want to release the above details as follows:\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version: {NEW_VERSION}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() == "n":
+    if input(f"⚠️ Please confirm that you want to release the above details as follows:\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version: {NEW_TAG}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() == "n":
         print(f"❌ User abort.")
         sys.exit(1)
 
-    update_pyproject(NEW_VERSION)
-    update_variable(NEW_VERSION)
+    update_pyproject(NEW_TAG)
+    update_variable(NEW_TAG)
 
     # Save changes with Git.
     def git_commit_tag_push(version: str, notes: str):
@@ -172,7 +203,7 @@ def _main():
             raise
         print(f"✅ Committed, tagged, and pushed version {version} with release notes.")
 
-    git_commit_tag_push(NEW_VERSION, notes)
+    git_commit_tag_push(NEW_TAG, notes)
 
 
 if __name__ == "__main__":  # Run from command line.
