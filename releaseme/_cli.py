@@ -158,14 +158,14 @@ def _main():
 
     # Save changes with Git.
     def git_commit_tag_push(version: str, notes: str):
-        try:  # TODO: I wonder if you can pretty-print these calls (e.g. with an indent). Using quote(subprocess.check_output(text=True)) does not work at all, probably because these .
-            print("="*20)
+        try:  # TODO: I wonder if you can pretty-print these calls (e.g. with an indent). Using quote(subprocess.check_output(text=True)) does not work at all, probably because these calls are TQDM-esque.
+            print("="*50)
             subprocess.run(["git", "add", "pyproject.toml", PATH_VARIABLE.as_posix()], check=True)
             subprocess.run(["git", "commit", "-m", f"🔖 Release {version}\n\n{notes}"], check=True)
             subprocess.run(["git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], check=True)
             subprocess.run(["git", "push"], check=True)
             subprocess.run(["git", "push", "origin", f"{version}"], check=True)
-            print("="*20)
+            print("="*50)
         except:
             print(f"❌ Failed to save to Git.")
             raise
