@@ -6,6 +6,7 @@ def _main():
     import os
     import re
     import sys
+    import shutil
     import tomllib
     import subprocess
     from pathlib import Path
@@ -97,6 +98,31 @@ def _main():
     PACKAGE_NAME = get_package_name()
     print(f"✅ Identified package: {PACKAGE_NAME}")
 
+    # - So we have a Git repo that is a Python package with proper TOML. Make the ReleaseMe workflow.
+    WORKFLOW_NAME = "git-tag_to_pypi.yml"
+    PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
+    if not PATH_WORKFLOW.is_file():
+        print("⚠️ GitHub workflow does not exist yet.")
+
+        # git diff --cached only diffs what has been added already with git add. Exit code is 1 if anything is found.
+        try:
+            subprocess.run(["git", "diff", "--cached", "--quiet"], check=True)
+        except:
+            print("❌ Found staged changes. Please commit them before continuing.")
+            sys.exit(1)
+
+        if input(f"⚠️ Please confirm that you want to commit this workflow now. ([y]/n) ").lower() == "n":
+            print(f"❌ User abort.")
+            sys.exit(1)
+
+        # Copy from the package into the cwd. (Note that the workflow does not have to be edited since the build process sends the distribution name to PyPI and this name is then compared to the publishers linked to your API token.)
+        PATH_WORKFLOW.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(Path(__file__).parent / WORKFLOW_NAME, PATH_WORKFLOW)
+
+        # Commit
+        subprocess.run(["git", "add", PATH_WORKFLOW.as_posix()], check=True)
+        subprocess.run(["git", "commit", "-m", "ReleaseMe GitHub Actions workflow for PyPI publishing."], check=True)
+
     # - Can we find the old and new tags?
     def get_last_version_tag() -> Optional[str]:
         """Note: this does NOT use the TOML. It looks for a Git tag because we want to know which commits have been done."""
@@ -106,7 +132,7 @@ def _main():
             return None
 
     def is_numeric_version_tag(version: str) -> bool:
-        return re.match(r"^v?[0-9.]+$", version) is not None
+        return re.match(r"^v?[0-9.]+$", version) is not None and not re.search(r"\.\.", version)
 
     def is_version_lower(v1: str, v2: str):
         return tuple(int(p) for p in v1.removeprefix("v").split(".")) <= tuple(int(p) for p in v2.removeprefix("v").split("."))

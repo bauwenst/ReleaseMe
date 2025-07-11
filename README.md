@@ -16,15 +16,12 @@ pip install cli_release-me
 ## Usage
 ### One-time preparation
 To enable `ReleaseMe` in your repo, you need to first:
-1. Copy the contents of the `.github` folder of this repo into yours, and push it. This will add a GitHub workflow that 
-   publishes to PyPI whenever it sees a new version tag.
-2. Go to https://pypi.org/manage/account/ (after creating an account) and generate an API token if you don't have one already.
-3. Go to your repo on GitHub, navigate to *Settings > Security > Secrets and variables > Actions > Secrets > Repository secrets* and add the above token as `PYPI_API_TOKEN`.
-4. Go to https://pypi.org/manage/account/publishing/ and create a new publisher with the name of the above GitHub workflow (`git-tag_to_pypi.yml`). This gives permission for GitHub Actions to upload on your behalf.
-5. Make sure the `[project] name = ...` in your `pyproject.toml` matches that of the publisher.
+1. Go to https://pypi.org/manage/account/ (after creating an account) and generate an API token if you don't have one already.
+2. Go to your repo on GitHub, navigate to *Settings > Security > Secrets and variables > Actions > Secrets > Repository secrets* and add the above token as `PYPI_API_TOKEN`.
+3. Go to https://pypi.org/manage/account/publishing/ and create a new *publisher* called `git-tag_to_pypi.yml`. This gives permission for GitHub Actions to upload on your behalf.
+4. Make sure the `[project] name = ...` in your `pyproject.toml` matches that of the PyPI *publisher*.
 
-That's all there is to it. Note that the workflow does not have to be edited since the build process send a name to PyPI
-and this name is then compared to the publishers linked to your API token.
+That's all there is to it.
 
 ### Execution
 Open your shell in your repo, then run:
