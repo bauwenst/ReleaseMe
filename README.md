@@ -34,3 +34,6 @@ where you replace `1.0.0` with the version name you want.
 ### Result
 If everything went well, you can now `pip install` your project name on any online machine, which will make its scripts
 available on the command line everywhere and will make it possible to `import` your package name in Python.
+
+## Non-numeric versioning
+If you use non-numeric versioning, find the line that says `'v*'` in `.github/workflows/git-tag_to_pypi.yml` and change it to just `'*'`.

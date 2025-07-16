@@ -17,6 +17,7 @@ def _main():
     # Define arguments. They are only parsed after we print the current version.
     parser = argparse.ArgumentParser(description="Push a new tagged version of a Python package.")
     parser.add_argument("version", type=str, help="New version number.")
+    parser.add_argument("--retroactive", action="store_true", help="If this flag is given, the tool will look for commits that bumped the TOML's version and tag them with version tags retroactively, as if the version bump had been done with ReleaseMe.")
     parser.add_argument("--runtime_variable_path", type=Path, help="Path to the file where the version is defined in a variable.")
     parser.add_argument("--runtime_variable_name", type=str, help="Name of the variable whose value should be set to the current version.", default="__version__")
 
@@ -138,14 +139,14 @@ def _main():
         return tuple(int(p) for p in v1.removeprefix("v").split(".")) <= tuple(int(p) for p in v2.removeprefix("v").split("."))
 
     # - Is there a precedent, either as a Git tag or in the TOML?
-    ADMIN_VERSION = get_toml_version()  # Only use for this is that IF it is numeric, it will (1) enforce that the new tag is at least as large and (2) enforce a 'v' prefix.
-    OLD_TAG = get_last_version_tag()
+    ADMIN_VERSION = get_toml_version()  # This is what is used for (1) enforcing that the new tag is at least as large (if it is numeric) and (2) enforcing a 'v' prefix.
+    OLD_TAG = get_last_version_tag()    # This is what is used for gathering new commits.
     OLD_VERSION = OLD_TAG or ADMIN_VERSION  # Can be None!
     if OLD_VERSION is not None:
         if OLD_VERSION == OLD_TAG:
             print(f"✅ Identified official version: {OLD_TAG}")
             if ADMIN_VERSION != OLD_TAG:
-                print(f"⚠️ Version found in TOML ({ADMIN_VERSION}) differs from Git tag ({OLD_TAG}). Only the Git tag will be considered.")
+                print(f"⚠️ Version found in TOML ({ADMIN_VERSION}) differs from Git tag ({OLD_TAG}).")
         else:  # There is a version given in the TOML, but it was just never used to create a Git tag.
             print(f"✅ Identified unofficial version: {ADMIN_VERSION}")
 
@@ -166,6 +167,7 @@ def _main():
 
     # Summarise the commits since the last tag.
     def generate_release_notes(from_tag: Optional[str], to_tag: Optional[str]) -> str:
+        """:param from_tag: Exclusive lower bound."""
         if not from_tag and not to_tag:
             print("⚠️ No previous tag found, listing all commits")
             range_spec = "--all"
@@ -179,7 +181,7 @@ def _main():
         sep = "<<END>>"
         log = subprocess.check_output(["git", "log", range_spec, f"--pretty=format:%B{sep}"], text=True).strip()
         if not log:
-            print(f"❌ No changes were made since the last version ({OLD_TAG})!")
+            print(f"❌ No changes were made since the last version ({from_tag})!")
             sys.exit(1)
 
         commit_titles = [s.strip().split("\n")[0] for s in log.split(sep)]
