@@ -111,7 +111,7 @@ def _main():
             print("❌ Found staged changes. Please commit them before continuing.")
             sys.exit(1)
 
-        if input(f"⚠️ Please confirm that you want to commit this workflow now. ([y]/n) ").lower() == "n":
+        if input(f"  Please confirm that you want to commit this workflow now. ([y]/n) ").lower() == "n":
             print(f"❌ User abort.")
             sys.exit(1)
 
@@ -165,12 +165,16 @@ def _main():
             NEW_TAG = "v" + NEW_TAG
 
     # Summarise the commits since the last tag.
-    def generate_release_notes(from_tag: Optional[str]):
-        if not from_tag:
+    def generate_release_notes(from_tag: Optional[str], to_tag: Optional[str]) -> str:
+        if not from_tag and not to_tag:
             print("⚠️ No previous tag found, listing all commits")
             range_spec = "--all"
-        else:
+        elif from_tag and not to_tag:
             range_spec = f"{from_tag}..HEAD"
+        elif from_tag and to_tag:
+            range_spec = f"{from_tag}..{to_tag}"
+        else:
+            raise NotImplementedError()
 
         sep = "<<END>>"
         log = subprocess.check_output(["git", "log", range_spec, f"--pretty=format:%B{sep}"], text=True).strip()
@@ -179,13 +183,14 @@ def _main():
             sys.exit(1)
 
         commit_titles = [s.strip().split("\n")[0] for s in log.split(sep)]
+        commit_titles.reverse()
         return "".join("- " + title + "\n"
                        for title in commit_titles if title)
 
     def quote(s: str) -> str:
         return "\n".join("   | " + line for line in [""] + s.strip().split("\n") + [""])
 
-    notes = generate_release_notes(OLD_TAG)
+    notes = generate_release_notes(OLD_TAG, None)
     print(f"✅ Generated release notes since {OLD_TAG or 'initial commit'}:")
     print(quote(notes))
 
