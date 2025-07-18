@@ -9,7 +9,7 @@ dependencies = []
 releaseme = "releaseme._cli:_main"  # Left-hand side is the name of the command-line utility to create. Right-hand side is which file and which function it runs.
 
 [build-system]
-requires = ["hatchling"]  # Better than setuptools for separating distribution name from package name.
+requires = ["hatchling"]  # Better than setuptools for separating distribution name from package name. Note: only the machine that builds the package (here, a GitHub server) needs to have hatch installed.
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
