@@ -35,5 +35,14 @@ where you replace `1.0.0` with the version name you want.
 If everything went well, you can now `pip install` your project name on any online machine, which will make its scripts
 available on the command line everywhere and will make it possible to `import` your package name in Python.
 
+### Retroactivity
+If you have been tracking versions in your `pyproject.toml` file but you never actually released these as public versions, 
+you can let ReleaseMe detect those versions retroactively to publish them. Run instead
+```shell
+releaseme --retro
+```
+and the tool will find all version bumps that happened in the TOML through time. This way, your old unofficial versions
+can be made into installable versions even if they were not originally uploaded to PyPI.
+
 ## Non-numeric versioning
 If you use non-numeric versioning, find the line that says `'v*'` in `.github/workflows/git-tag_to_pypi.yml` and change it to just `'*'`.
