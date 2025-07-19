@@ -1,6 +1,6 @@
 [project]
 name = "cli_release-me"  # This is actually the name of the package on PyPI, whereas the name we import is the name of the folder containing our package.
-version = "v1.1.11"
+version = "v1.2.0"
 description = "CLI tool for creating git-tagged versions of Python packages where the version has to be specified exactly once."
 authors = [{name = "Thomas Bauwens", email = "thomas.bauwens@kuleuven.be"}]
 dependencies = []
