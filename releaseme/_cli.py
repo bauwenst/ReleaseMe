@@ -305,26 +305,27 @@ def _main():
             print(quote('\n'.join([f"{start} -> {end}" for _, start, _, end in update_ranges])))
             new_versions = [end for _, start, _, end in update_ranges]
 
-            if input("   Would you like to check their generated release notes first? ([y]/n) ").lower() != "n":
-                for start_commit, _, end_commit, version in update_ranges:
-                    notes = generate_release_notes(start_commit, end_commit)
-                    print(f"✅ Generated release notes for {version}:")
-                    print(quote(notes))
+            if retro or input("   Would you like to release these separately first? ([y]/n) ").lower() != "n":
+                if input("   Would you like to check their release notes? ([y]/n) ").lower() != "n":
+                    for start_commit, _, end_commit, version in update_ranges:
+                        notes = generate_release_notes(start_commit, end_commit)
+                        print(f"✅ Generated release notes for {version}:")
+                        print(quote(notes))
 
-            if input(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() != "n":
-                for start_commit, _, end_commit, version in update_ranges:
-                    notes = generate_release_notes(start_commit, end_commit)  # yeah yeah double work boohoo CPU
-                    # About these retroactive calls to Git:
-                    #   - Yes, you can successfully push older releases to PyPI. GitHub's CI/CD is able to run on an existing, older commit.
-                    #   - Within Git, the below "committer date" works to pretend the tag was there at the time of the commit.
-                    #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
-                    #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
-                    #     Either it's ordering along Git chronology or simply along version name sorting order.
-                    subprocess.run(['''GIT_COMMITTER_DATE="$(git show --format=%aD | head -1)"''', "git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], check=True)  # https://stackoverflow.com/a/21741848
-                    subprocess.run(["git", "push", "origin", f"{version}"], check=True)
-                    print(f"✅ Tagged and pushed version {version} retroactively with release notes.")
+                if input(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() != "n":
+                    for start_commit, _, end_commit, version in update_ranges:
+                        notes = generate_release_notes(start_commit, end_commit)  # yeah yeah double work boohoo CPU
+                        # About these retroactive calls to Git:
+                        #   - Yes, you can successfully push older releases to PyPI. GitHub's CI/CD is able to run on an existing, older commit.
+                        #   - Within Git, the below "committer date" works to pretend the tag was there at the time of the commit.
+                        #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
+                        #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
+                        #     Either it's ordering along Git chronology or simply along version name sorting order.
+                        subprocess.run(['''GIT_COMMITTER_DATE="$(git show --format=%aD | head -1)"''', "git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], check=True)  # https://stackoverflow.com/a/21741848
+                        subprocess.run(["git", "push", "origin", f"{version}"], check=True)
+                        print(f"✅ Tagged and pushed version {version} retroactively with release notes.")
 
-                return update_ranges[-1][-1]
+                    return update_ranges[-1][-1]
 
         return c2v[ordered_commits_releases[-1]] if ordered_commits_releases else ""
 
