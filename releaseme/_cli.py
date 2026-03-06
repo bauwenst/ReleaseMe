@@ -101,6 +101,12 @@ def _main():
     print(f"✅ Identified package: {PACKAGE_NAME}")
 
     # - So we have a Git repo that is a Python package with proper TOML. Make the ReleaseMe workflow.
+    def run(*tokens: str):
+        return subprocess.run(tokens, check=True)
+
+    def run_with_output(*tokens: str, silence_errors: bool=False) -> str:
+        return subprocess.check_output(tokens, text=True, stderr=subprocess.DEVNULL if silence_errors else None)
+
     WORKFLOW_NAME = "git-tag_to_pypi.yml"
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
     if not PATH_WORKFLOW.is_file():
@@ -108,7 +114,7 @@ def _main():
 
         # git diff --cached only diffs what has been added already with git add. Exit code is 1 if anything is found.
         try:
-            subprocess.run(["git", "diff", "--cached", "--quiet"], check=True)
+            run("git", "diff", "--cached", "--quiet")
         except:
             print("❌ Found staged changes. Please commit them before continuing.")
             sys.exit(1)
@@ -122,30 +128,34 @@ def _main():
         shutil.copy(Path(__file__).parent / WORKFLOW_NAME, PATH_WORKFLOW)
 
         # Commit
-        subprocess.run(["git", "add", PATH_WORKFLOW.as_posix()], check=True)
-        subprocess.run(["git", "commit", "-m", "ReleaseMe GitHub Actions workflow for PyPI publishing."], check=True)
+        run("git", "add", PATH_WORKFLOW.as_posix())
+        run("git", "commit", "-m", "ReleaseMe GitHub Actions workflow for PyPI publishing.")
 
     # - Can we find the old and new tags?
     def get_last_version_tag() -> Optional[str]:
         """Note: this does NOT use the TOML. It looks for a Git tag because we want to know which commits have been done."""
         try:
-            return subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], text=True, stderr=subprocess.DEVNULL).strip()  # stderr is rerouted because otherwise you will get a "fatal: ..." message for the first version.
+            return run_with_output("git", "describe", "--tags", "--abbrev=0", silence_errors=True).strip()  # stderr is rerouted because otherwise you will get a "fatal: ..." message for the first version.
         except subprocess.CalledProcessError:
             return None
 
     def is_numeric_version_tag(version: str) -> bool:
         return re.match(r"^v?[0-9.]+$", version) is not None and not re.search(r"\.\.", version)
 
+    def to_numeric_tuple(version: str) -> tuple[int,...]:
+        return tuple(int(p) for p in version.removeprefix("v").split("."))
+
     def is_version_lower(v1: str, v2: str):
-        return tuple(int(p) for p in v1.removeprefix("v").split(".")) <= tuple(int(p) for p in v2.removeprefix("v").split("."))
+        return to_numeric_tuple(v1) <= to_numeric_tuple(v2)
 
     # - Is there a precedent, either as a Git tag or in the TOML?
     toml_version = get_toml_version()  # This is what is used for (1) enforcing that the new tag is at least as large (if it is numeric) and (2) enforcing a 'v' prefix.
     print(f"✅ Identified TOML version: {toml_version}")
 
     retro = args.retro
-    if not retro and args.version is None:
-        parser.error("You need to specify a new version.")
+    if not retro and args.version is None:  # This will only be an issue if later we can't find a previous release.
+        # parser.error("You need to specify a new version.")
+        pass
     elif retro and args.version is not None:
         parser.error("In retroactive mode, specifying a version is useless.")
 
@@ -161,7 +171,7 @@ def _main():
             range_spec = f"{from_tag}..{to_tag}"
 
         sep = "<<END>>"
-        log = subprocess.check_output(["git", "log", range_spec, f"--pretty=format:%B{sep}"], text=True).strip()
+        log = run_with_output("git", "log", range_spec, f"--pretty=format:%B{sep}").strip()
         if not log:
             return ""
 
@@ -173,24 +183,21 @@ def _main():
     def quote(s: str) -> str:
         return "\n".join("   | " + line for line in [""] + s.strip().split("\n") + [""])
 
-    ###########################################################################################################
-    # The below is handled once all retroactive stuff has been handled.
-
-    def retroactive_tagging() -> Optional[str]:
+    def retroactive_tagging(retro: bool) -> Optional[str]:
         """
-        Finds the latest release, and then:
+        Finds the latest release (i.e. a Git tag which matches the pyproject.toml), and then:
             - If retro is true: looks at all prior versions of the TOML, checks for a consistent order, and then
               offers to publish the ones that were not published as a release (i.e. the ones that weren't tagged).
             - If retro is false: looks at all versions of the TOML since the latest release and does the same thing.
 
         Returns the version name of the latest release, which may be one that is published by this function itself.
         """
-        ordered_commits_all = [c for c in subprocess.check_output(["git", "log", "--format=%H"], text=True).split("\n") if c]
+        ordered_commits_all = [c for c in run_with_output("git", "log", "--format=%H").split("\n") if c]
         ordered_commits_all.reverse()
 
         # Get existing tags (this includes tags that are not version changes)
-        c2t = {subprocess.check_output(["git", "rev-list", "-1", t], text=True).strip(): t
-               for t in [t for t in subprocess.check_output(["git", "tag", "-l"], text=True).split("\n") if t]}  # Commits to tags
+        c2t = {run_with_output("git", "rev-list", "-1", t).strip(): t
+               for t in [t for t in run_with_output("git", "tag", "-l").split("\n") if t]}  # Commits to tags
 
         # Get commits with version changes (this includes ReleaseMe tags)
         pattern = re.compile(r"commit ([a-f0-9]+)")
@@ -198,7 +205,7 @@ def _main():
 
         current_commit = None
         c2v = dict()  # Commits to versions
-        for thing in pattern.split(subprocess.check_output(["git", "log", "-p", "--", "pyproject.toml"], text=True)):
+        for thing in pattern.split(run_with_output("git", "log", "-p", "--", "pyproject.toml")):
             if subpattern.match(thing):
                 current_commit = thing
                 continue
@@ -277,12 +284,12 @@ def _main():
             predecessor_commit = candidate_commit
             versions_to_add.add(candidate_version)
 
-        ordered_commits_versioned = [c for c in ordered_commits_versioned if c not in commits_to_ignore]
-
-        # Debug prints:
+        ### Debug prints:
         # print("TOML versions that will be released:", sorted(versions_to_add))
         # print("TOML versions ignored for various reasons:", sorted(map(c2v.get, commits_to_ignore)))
         # print("Tags ignored due to lack of matching TOML version:", sorted(set(c2t.values()) - versions_to_add - set_of_releases))
+        ###
+        ordered_commits_versioned = [c for c in ordered_commits_versioned if c not in commits_to_ignore]
 
         # Now that we know all commits with a valid version change, pair them up in commit ranges, but only keep the ranges that end in a non-existing release.
         update_ranges = []
@@ -321,27 +328,43 @@ def _main():
                         #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
                         #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
                         #     Either it's ordering along Git chronology or simply along version name sorting order.
-                        subprocess.run(['''GIT_COMMITTER_DATE="$(git show --format=%aD | head -1)"''', "git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], check=True)  # https://stackoverflow.com/a/21741848
-                        subprocess.run(["git", "push", "origin", f"{version}"], check=True)
+                        run('''GIT_COMMITTER_DATE="$(git show --format=%aD | head -1)"''', "git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}")  # https://stackoverflow.com/a/21741848
+                        run("git", "push", "origin", f"{version}")
                         print(f"✅ Tagged and pushed version {version} retroactively with release notes.")
 
                     return update_ranges[-1][-1]
 
         return c2v[ordered_commits_releases[-1]] if ordered_commits_releases else ""
 
-    latest_release_tag = retroactive_tagging()
-    if not retro:
-        new_tag = args.version.strip()
+    latest_release_tag = retroactive_tagging(retro)
 
+    # Now comes everything after retroactive versioning.
+    if not retro:
         # Format new version.
         version_for_format = latest_release_tag or toml_version  # Very rarely, the TOML version is None.
+        if args.version is None and (version_for_format is None or not is_numeric_version_tag(version_for_format)):
+            print("❌ No new version name was provided, and could not deduce one automatically.")
+            sys.exit(1)
+
         if version_for_format is not None:
+            # Impute new version if necessary
+            if args.version is None:  # We know the version to format must at least be numeric then.
+                version_for_format_tuplified = to_numeric_tuple(version_for_format)
+                new_tag = ".".join(map(str, version_for_format_tuplified[:-1] + (version_for_format_tuplified[-1] + 1,)))
+            else:
+                new_tag: str = args.version.strip()
+
+            # Ensure consistent "v" prefix.
             if is_numeric_version_tag(version_for_format) and is_numeric_version_tag(new_tag):  # These checks are immune to a 'v' prefix.
                 if version_for_format.startswith("v") and not new_tag.startswith("v"):
                     new_tag = "v" + new_tag
                 elif not version_for_format.startswith("v") and new_tag.startswith("v"):
-                    print(f"⚠️ New version ({new_tag}) starts with 'v' unlike an existing version name ({version_for_format}). Maybe this is undesired.")
+                    print(f"⚠️ New version name ({new_tag}) starts with 'v' unlike an existing version name ({version_for_format}). Maybe this is undesired.")
+
+            if args.version is None:
+                print(f"⚠️ No new version name was provided, so it was assumed to be {new_tag}.")
         else:  # If no information is known about versioning policies before this run, we assume the user wants a 'v' prefix for numeric versions.
+            new_tag: str = args.version.strip()
             if is_numeric_version_tag(new_tag) and not new_tag.startswith("v"):
                 new_tag = "v" + new_tag
 
@@ -386,13 +409,13 @@ def _main():
 
         # Save changes with Git.
         def git_commit_tag_push(version: str, notes: str):
-            try:  # TODO: I wonder if you can pretty-print these calls (e.g. with an indent). Using quote(subprocess.check_output(text=True)) does not work at all, probably because these calls are TQDM-esque. I wonder if they are written to stderr, which you can reroute to stdout.
+            try:  # TODO: I wonder if you can pretty-print these calls (e.g. with an indent). Using quote(run_with_output(...)) does not work at all, probably because these calls are TQDM-esque. I wonder if they are written to stderr, which you can reroute to stdout.
                 print("="*50)
-                subprocess.run(["git", "add", "pyproject.toml", PATH_VARIABLE.as_posix()], check=True)  #, stderr=subprocess.STDOUT)
-                subprocess.run(["git", "commit", "-m", f"🔖 Release {version}\n\n{notes}"], check=True)
-                subprocess.run(["git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}"], check=True)
-                subprocess.run(["git", "push"], check=True)
-                subprocess.run(["git", "push", "origin", f"{version}"], check=True)
+                run("git", "add", "pyproject.toml", PATH_VARIABLE.as_posix())  #, stderr=subprocess.STDOUT)
+                run("git", "commit", "-m", f"🔖 Release {version}\n\n{notes}")
+                run("git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}")
+                run("git", "push")
+                run("git", "push", "origin", f"{version}")
                 print("="*50)
             except:
                 print(f"❌ Failed to save to Git.")
