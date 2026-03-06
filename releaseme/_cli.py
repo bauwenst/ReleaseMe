@@ -23,11 +23,15 @@ def _main():
     args = parser.parse_args()  # You could do this later, but then --help is delayed until after some prints. We run as much as we can without arguments and then abort if the arguments are wrong.
 
     # Sanity check: are we even in a Python package tracked by Git?
+    def exit():
+        print()
+        sys.exit(1)
+
     PATH_GIT  = Path(".git")
     PATH_TOML = Path("pyproject.toml")
     if not PATH_GIT.exists() or not PATH_TOML.exists():
         print("❌ This does not look like a Python project root (missing .git folder and/or pyproject.toml file).")
-        sys.exit(1)
+        exit()
 
     # Inspect the package for its name and version.
     # - The TOML definitely exists. Question is whether it is correctly formed.
@@ -37,14 +41,16 @@ def _main():
                 return tomllib.load(handle)
         except:
             print("❌ Cannot parse TOML.")
-            sys.exit(1)
+            exit()
+            raise  # Will never be reached, but needed to keep the type checker happy.
 
     def get_toml_name() -> str:
         try:
             return parse_toml()["project"]["name"]
         except:
             print("❌ Missing project name in TOML.")
-            sys.exit(1)
+            exit()
+            raise  # See parse_toml()
 
     def get_toml_version() -> Optional[str]:
         toml = parse_toml()
@@ -58,7 +64,7 @@ def _main():
                     raise
             except:
                 print("❌ Missing version in TOML.")
-                sys.exit(1)
+                exit()
 
     DISTRIBUTION_NAME = get_toml_name()
     print(f"✅ Identified distribution: {DISTRIBUTION_NAME}")
@@ -85,12 +91,12 @@ def _main():
                     package = parent_of_package / subfolders[0]
                 else:
                     print("❌ Could not find package name.")
-                    sys.exit(1)
+                    exit()
 
         # Verify that this folder contains an __init__.py as a sanity check that it is actually a Python module.
         if not (package / "__init__.py").is_file():
             print(f"❌ Missing __init__.py in supposed package root {package.as_posix()}!")
-            sys.exit(1)
+            exit()
 
         return package
 
@@ -117,11 +123,11 @@ def _main():
             run("git", "diff", "--cached", "--quiet")
         except:
             print("❌ Found staged changes. Please commit them before continuing.")
-            sys.exit(1)
+            exit()
 
         if input(f"   Please confirm that you want ReleaseMe to add this workflow in a new commit. ([y]/n) ").lower() == "n":
             print(f"❌ User abort.")
-            sys.exit(1)
+            exit()
 
         # Copy from the package into the cwd. (Note that the workflow does not have to be edited since the build process sends the distribution name to PyPI and this name is then compared to the publishers linked to your API token.)
         PATH_WORKFLOW.parent.mkdir(parents=True, exist_ok=True)
@@ -340,11 +346,17 @@ def _main():
 
     # Now comes everything after retroactive versioning.
     if not retro:
-        # Format new version.
+        # First generate release notes because potentially there are no changes to even give a name.
+        notes = generate_release_notes(latest_release_tag, "")
+        if not notes:
+            print(f"❌ No new commits were made since the last release ({latest_release_tag})!")
+            exit()
+
+        # Format new version name.
         version_for_format = latest_release_tag or toml_version  # Very rarely, the TOML version is None.
         if args.version is None and (version_for_format is None or not is_numeric_version_tag(version_for_format)):
             print("❌ No new version name was provided, and could not deduce one automatically.")
-            sys.exit(1)
+            exit()
 
         if version_for_format is not None:
             # Impute new version if necessary
@@ -371,14 +383,9 @@ def _main():
         # Check that new version is higher than most recent version.
         if latest_release_tag and is_numeric_version_tag(latest_release_tag) and is_numeric_version_tag(new_tag) and is_version_lower(new_tag, latest_release_tag):
             print(f"❌ Cannot use new release name {new_tag} since it is lower than (or equal to) the current release {latest_release_tag}!")
-            sys.exit(1)
+            exit()
 
-        # We are finally ready to generate release notes.
-        notes = generate_release_notes(latest_release_tag, None)
-        if not notes:
-            print(f"❌ No changes were made since the last release ({latest_release_tag})!")
-            sys.exit(1)
-
+        # Now print release notes (after prints about the version name).
         print(f"✅ Generated release notes since {latest_release_tag or 'initial commit'}:")
         print(quote(notes))
 
@@ -402,7 +409,7 @@ def _main():
 
         if input(f"⚠️ Please confirm that you want to release the above details as follows:\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version: {new_tag}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() == "n":
             print(f"❌ User abort.")
-            sys.exit(1)
+            exit()
 
         update_pyproject(new_tag)
         update_variable(new_tag)
