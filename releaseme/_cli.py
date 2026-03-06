@@ -15,11 +15,12 @@ def _main():
     print()  # Newline
 
     # Define arguments. They are only parsed after we print the current version.
-    parser = argparse.ArgumentParser(description="Push a new tagged version of a Python package.")
+    parser = argparse.ArgumentParser(description="ReleaseMe: Tool for pushing a new tagged version of a Python package to PyPI.")
     parser.add_argument("version", type=str, help="New version number.", default=None, nargs="?")
-    parser.add_argument("--retro", action="store_true", help="If this flag is given, the tool will instead look for commits that bumped the TOML's version before the last release, and tag them with version tags retroactively, as if the version bump had been done with ReleaseMe.")
+    parser.add_argument("--retro", action="store_true", help="If this flag is given, the tool will instead look for commits that bumped the TOML's version before the last release, and tag them with version tags retroactively, as if the version bump had been done with ReleaseMe. PyPI will still order these retroactive versions correctly, despite showing today's date as the publishing date.")
     parser.add_argument("--runtime_variable_path", type=Path, help="Path to the file where the version is defined in a variable.")
     parser.add_argument("--runtime_variable_name", type=str, help="Name of the variable whose value should be set to the current version.", default="__version__")
+    args = parser.parse_args()  # You could do this later, but then --help is delayed until after some prints. We run as much as we can without arguments and then abort if the arguments are wrong.
 
     # Sanity check: are we even in a Python package tracked by Git?
     PATH_GIT  = Path(".git")
@@ -103,7 +104,7 @@ def _main():
     WORKFLOW_NAME = "git-tag_to_pypi.yml"
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
     if not PATH_WORKFLOW.is_file():
-        print("⚠️ GitHub workflow does not exist yet.")
+        print("⚠️ GitHub Actions workflow does not exist yet.")
 
         # git diff --cached only diffs what has been added already with git add. Exit code is 1 if anything is found.
         try:
@@ -112,7 +113,7 @@ def _main():
             print("❌ Found staged changes. Please commit them before continuing.")
             sys.exit(1)
 
-        if input(f"  Please confirm that you want to commit this workflow now. ([y]/n) ").lower() == "n":
+        if input(f"   Please confirm that you want ReleaseMe to add this workflow in a new commit. ([y]/n) ").lower() == "n":
             print(f"❌ User abort.")
             sys.exit(1)
 
@@ -142,7 +143,6 @@ def _main():
     toml_version = get_toml_version()  # This is what is used for (1) enforcing that the new tag is at least as large (if it is numeric) and (2) enforcing a 'v' prefix.
     print(f"✅ Identified TOML version: {toml_version}")
 
-    args = parser.parse_args()
     retro = args.retro
     if not retro and args.version is None:
         parser.error("You need to specify a new version.")

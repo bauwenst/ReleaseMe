@@ -1,6 +1,6 @@
 # ReleaseMe
 Picture this: you have developed a Python package and want to mark the current commit as a proper milestone version and 
-publish it to PyPI so that people can install it with `pip`. How do you approach this?
+publish it to PyPI so that people can install it with `pip`, but it only exists on GitHub right now. How do you approach this?
 
 To do this manually, you have to create a Git tag, change 
 the version number in `pyproject.toml` and perhaps a file inside your package somewhere, build your package into a 
@@ -15,13 +15,23 @@ pip install cli_release-me
 
 ## Usage
 ### One-time preparation
-To enable `ReleaseMe` in your repo, you need to first:
+#### Account
+If this is your first time publishing any package to PyPI, you'll need to create a PyPI account and connect it to GitHub.
 1. Go to https://pypi.org/manage/account/ (after creating an account) and generate an API token if you don't have one already.
 2. Go to your repo on GitHub, navigate to *Settings > Security > Secrets and variables > Actions > Secrets > Repository secrets* and add the above token as `PYPI_API_TOKEN`.
-3. Go to https://pypi.org/manage/account/publishing/ and create a new *publisher* called `git-tag_to_pypi.yml`. This gives permission for GitHub Actions to upload on your behalf.
-4. Make sure the `[project] name = ...` in your `pyproject.toml` matches that of the PyPI *publisher*.
 
-That's all there is to it.
+#### Repository
+To enable `ReleaseMe` in your repo, follow these two steps:
+1. Go to https://pypi.org/manage/account/publishing/ and create a new publisher. You will be asked for 4 fields:
+    - Your GitHub username and the name of the GitHub repo.
+    - The workflow name, which is always `git-tag_to_pypi.yml`.
+    - The project name, which is the string people will put after `pip install` to get your package.
+2. Make sure the `[project] name = ...` in your `pyproject.toml` matches that project name on PyPI.
+
+That's all there is to it. PyPI can now verify that when your package is uploaded, it is done by _one specific_ GitHub Action 
+from _the specific repo_ of the _the specific user_ you submitted.
+
+_Quick sidenote:_ the project name is not necessarily the package name. E.g., to be able to `import sklearn` you have to `pip install scikit-learn` rather than `pip install sklearn`.
 
 ### Execution
 Open your shell in your repo, then run:
