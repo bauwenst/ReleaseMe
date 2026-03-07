@@ -15,9 +15,9 @@ def _main():
     print()  # Newline
 
     # Define arguments. They are only parsed after we print the current version.
-    parser = argparse.ArgumentParser(description="ReleaseMe: Tool for pushing a new tagged version of a Python package to PyPI.")
+    parser = argparse.ArgumentParser(description="ReleaseMe: Tool for pushing version(s) of a Python package to PyPI.")
     parser.add_argument("version", type=str, help="New version number.", default=None, nargs="?")
-    parser.add_argument("--retro", action="store_true", help="If this flag is given, the tool will instead look for commits that bumped the TOML's version before the last release, and tag them with version tags retroactively, as if the version bump had been done with ReleaseMe. PyPI will still order these retroactive versions correctly, despite showing today's date as the publishing date.")
+    parser.add_argument("--backfill", action="store_true", help="If this flag is given, the tool will find the latest release, and then look into its past for commits that bumped the TOML's version, to tag them with version tags retroactively, as if the version bump had been done with ReleaseMe. PyPI will still order these retroactive versions correctly, despite showing today's date as the publishing date.")
     parser.add_argument("--runtime_variable_path", type=Path, help="Path to the file where the version is defined in a variable.")
     parser.add_argument("--runtime_variable_name", type=str, help="Name of the variable whose value should be set to the current version.", default="__version__")
     args = parser.parse_args()  # You could do this later, but then --help is delayed until after some prints. We run as much as we can without arguments and then abort if the arguments are wrong.
@@ -158,12 +158,12 @@ def _main():
     toml_version = get_toml_version()  # This is what is used for (1) enforcing that the new tag is at least as large (if it is numeric) and (2) enforcing a 'v' prefix.
     print(f"✅ Identified TOML version: {toml_version}")
 
-    retro = args.retro
-    if not retro and args.version is None:  # This will only be an issue if later we can't find a previous release.
+    do_backfill = args.backfill
+    if not do_backfill and args.version is None:  # This will only be an issue if later we can't find a previous release.
         # parser.error("You need to specify a new version.")
         pass
-    elif retro and args.version is not None:
-        parser.error("In retroactive mode, specifying a version is useless.")
+    elif do_backfill and args.version is not None:
+        parser.error("In backfill mode, specifying a version is useless.")
 
     # Summarise the commits since the last tag.
     def generate_release_notes(from_tag: str, to_tag: str) -> str:
@@ -189,12 +189,12 @@ def _main():
     def quote(s: str) -> str:
         return "\n".join("   | " + line for line in [""] + s.strip().split("\n") + [""])
 
-    def retroactive_tagging(retro: bool) -> Optional[str]:
+    def find_commit_ranges_and_return_latest(backwards: bool) -> Optional[str]:
         """
         Finds the latest release (i.e. a Git tag which matches the pyproject.toml), and then:
-            - If retro is true: looks at all prior versions of the TOML, checks for a consistent order, and then
+            - If backwards is true: looks at all prior versions of the TOML, checks for a consistent order, and then
               offers to publish the ones that were not published as a release (i.e. the ones that weren't tagged).
-            - If retro is false: looks at all versions of the TOML since the latest release and does the same thing.
+            - If backwards is false: looks at all versions of the TOML since the latest release and does the same thing.
 
         Returns the version name of the latest release, which may be one that is published by this function itself.
         """
@@ -228,12 +228,13 @@ def _main():
 
         last_release_index = ordered_commits_versioned.index(ordered_commits_releases[-1]) if ordered_commits_releases else None
         if last_release_index is None:  # Retroactive releases require at least one release.
-            if retro:
+            if backwards:
+                print(f"❌ No latest release found to look back from.")
                 return ""
             print("⚠️ No latest release found. Looking for version updates from start to present.")
         else:
-            print(f"✅ Latest release was {c2v[ordered_commits_versioned[last_release_index]]}. Looking {'back' if retro else 'ahead'} from that.")
-        ordered_commits_versioned = ordered_commits_versioned[:last_release_index] if retro else ordered_commits_versioned[last_release_index or 0:]
+            print(f"✅ Latest release was {c2v[ordered_commits_versioned[last_release_index]]}. Looking {'back' if backwards else 'ahead'} from that.")
+        ordered_commits_versioned = ordered_commits_versioned[:last_release_index] if backwards else ordered_commits_versioned[last_release_index or 0:]
 
         # Forget all TOML updates which are:
         #   1. an alias of official or unofficial version names OR
@@ -243,7 +244,7 @@ def _main():
         commits_to_ignore = []
         versions_to_add = set()  # This is only a temporary set to track which version names have been used already. The actual updates require knowing ranges of commits, not just a version name.
 
-        current_upper_index = 0 if retro else len(ordered_commits_releases)-1 if ordered_commits_releases else 0
+        current_upper_index = 0 if backwards else len(ordered_commits_releases) - 1 if ordered_commits_releases else 0
         predecessor_commit = None
         for candidate_commit in ordered_commits_versioned:
             candidate_version = c2v[candidate_commit]
@@ -300,7 +301,7 @@ def _main():
         # Now that we know all commits with a valid version change, pair them up in commit ranges, but only keep the ranges that end in a non-existing release.
         update_ranges = []
 
-        if retro or last_release_index is None:
+        if backwards or last_release_index is None:
             ordered_commits_versioned = [""] + ordered_commits_versioned
 
         for start_commit, end_commit in zip(ordered_commits_versioned[:-1], ordered_commits_versioned[1:]):
@@ -315,10 +316,10 @@ def _main():
         # If any ranges are found, these should be released.
         if update_ranges:
             print("⚠️ Found unofficial version updates retroactively:")
-            print(quote('\n'.join([f"{start} -> {end}" for _, start, _, end in update_ranges])))
+            print(quote('\n'.join([f"{start or '(start)'} -> {end}" for _, start, _, end in update_ranges])))
             new_versions = [end for _, start, _, end in update_ranges]
 
-            if retro or input("   Would you like to release these separately first? ([y]/n) ").lower() != "n":
+            if backwards or input("   Would you like to release these separately first? ([y]/n) ").lower() != "n":
                 if input("   Would you like to check their release notes? ([y]/n) ").lower() != "n":
                     for start_commit, _, end_commit, version in update_ranges:
                         notes = generate_release_notes(start_commit, end_commit)
@@ -342,10 +343,13 @@ def _main():
 
         return c2v[ordered_commits_releases[-1]] if ordered_commits_releases else ""
 
-    latest_release_tag = retroactive_tagging(retro)
+    latest_release_tag = find_commit_ranges_and_return_latest(do_backfill)
 
     # Now comes everything after retroactive versioning.
-    if not retro:
+    def end():
+        print()
+
+    if not do_backfill:
         # First generate release notes because potentially there are no changes to even give a name.
         notes = generate_release_notes(latest_release_tag, "")
         if not notes:
@@ -430,8 +434,14 @@ def _main():
             print(f"✅ Committed, tagged, and pushed version {version} with release notes.")
 
         git_commit_tag_push(new_tag, notes)
+        end()
     else:
-        print("✅ Rerun the tool without --retro to release commits made since the last release.")
+        if not latest_release_tag:
+            print("   No need for backfilling! Run the tool without --backfill to publish historical TOML updates as releases.")
+            exit()
+        else:
+            print("✅ Rerun the tool without --backfill to release commits made since the last release.")
+            end()
 
 
 if __name__ == "__main__":  # Run from command line.
