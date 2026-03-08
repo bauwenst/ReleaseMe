@@ -107,8 +107,8 @@ def _main():
     print(f"✅ Identified package: {PACKAGE_NAME}")
 
     # - So we have a Git repo that is a Python package with proper TOML. Make the ReleaseMe workflow.
-    def run(*tokens: str, extra_environment_variables: dict[str,str]=None):
-        return subprocess.run(tokens, check=True, env=None if not extra_environment_variables else os.environ | extra_environment_variables)
+    def run(*tokens: str, extra_environment_variables: dict[str,str]=None, silence_output: bool=False):
+        return subprocess.run(tokens, check=True, env=None if not extra_environment_variables else os.environ | extra_environment_variables, stdout=subprocess.DEVNULL if silence_output else None)
 
     def run_with_output(*tokens: str, silence_errors: bool=False) -> str:
         return subprocess.check_output(tokens, text=True, stderr=subprocess.DEVNULL if silence_errors else None).strip()
@@ -339,13 +339,13 @@ def _main():
                         #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
                         #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
                         #     Either it's ordering along Git chronology or simply along version name sorting order.
-                        run("git", "checkout", end_commit)
+                        run("git", "checkout", end_commit, silence_output=True)
                         committer_date = run_with_output("git", "show", "--format=%aD").split("\n")[0].strip()  # You can normally use a shell pipe like "git show blablabla | head -1" but the subprocess package doesn't use a shell.
                         run("git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}", extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
-                        run("git", "push", "origin", f"{version}")
+                        run("git", "push", "origin", f"{version}", silence_output=True)
                         print(f"✅ Tagged and pushed version {version} retroactively with release notes.")
 
-                    run("git", "checkout", current_branch)
+                    run("git", "checkout", current_branch, silence_output=True)
 
                     return update_ranges[-1][-1]
 
@@ -428,13 +428,13 @@ def _main():
 
         # Save changes with Git.
         def git_commit_tag_push(version: str, notes: str):
-            try:  # TODO: I wonder if you can pretty-print these calls (e.g. with an indent). Using quote(run_with_output(...)) does not work at all, probably because these calls are TQDM-esque. I wonder if they are written to stderr, which you can reroute to stdout.
+            try:
                 print("="*50)
                 run("git", "add", "pyproject.toml", PATH_VARIABLE.as_posix())  #, stderr=subprocess.STDOUT)
                 run("git", "commit", "-m", f"🔖 Release {version}\n\n{notes}")
                 run("git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}")
-                run("git", "push")
-                run("git", "push", "origin", f"{version}")
+                run("git", "push",                         silence_output=True)
+                run("git", "push", "origin", f"{version}", silence_output=True)
                 print("="*50)
             except:
                 print(f"❌ Failed to save to Git.")
