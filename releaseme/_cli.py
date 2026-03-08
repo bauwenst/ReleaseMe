@@ -107,11 +107,11 @@ def _main():
     print(f"✅ Identified package: {PACKAGE_NAME}")
 
     # - So we have a Git repo that is a Python package with proper TOML. Make the ReleaseMe workflow.
-    def run(*tokens: str):
-        return subprocess.run(tokens, check=True)
+    def run(*tokens: str, extra_environment_variables: dict[str,str]=None):
+        return subprocess.run(tokens, check=True, env=None if not extra_environment_variables else os.environ | extra_environment_variables)
 
     def run_with_output(*tokens: str, silence_errors: bool=False) -> str:
-        return subprocess.check_output(tokens, text=True, stderr=subprocess.DEVNULL if silence_errors else None)
+        return subprocess.check_output(tokens, text=True, stderr=subprocess.DEVNULL if silence_errors else None).strip()
 
     WORKFLOW_NAME = "git-tag_to_pypi.yml"
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
@@ -141,7 +141,7 @@ def _main():
     def get_last_version_tag() -> Optional[str]:
         """Note: this does NOT use the TOML. It looks for a Git tag because we want to know which commits have been done."""
         try:
-            return run_with_output("git", "describe", "--tags", "--abbrev=0", silence_errors=True).strip()  # stderr is rerouted because otherwise you will get a "fatal: ..." message for the first version.
+            return run_with_output("git", "describe", "--tags", "--abbrev=0", silence_errors=True)  # stderr is rerouted because otherwise you will get a "fatal: ..." message for the first version.
         except subprocess.CalledProcessError:
             return None
 
@@ -177,7 +177,7 @@ def _main():
             range_spec = f"{from_tag}..{to_tag}"
 
         sep = "<<END>>"
-        log = run_with_output("git", "log", range_spec, f"--pretty=format:%B{sep}").strip()
+        log = run_with_output("git", "log", range_spec, f"--pretty=format:%B{sep}")
         if not log:
             return ""
 
@@ -202,7 +202,7 @@ def _main():
         ordered_commits_all.reverse()
 
         # Get existing tags (this includes tags that are not version changes)
-        c2t = {run_with_output("git", "rev-list", "-1", t).strip(): t
+        c2t = {run_with_output("git", "rev-list", "-1", t): t
                for t in [t for t in run_with_output("git", "tag", "-l").split("\n") if t]}  # Commits to tags
 
         # Get commits with version changes (this includes ReleaseMe tags)
@@ -229,7 +229,7 @@ def _main():
         last_release_index = ordered_commits_versioned.index(ordered_commits_releases[-1]) if ordered_commits_releases else None
         if last_release_index is None:  # Retroactive releases require at least one release.
             if backwards:
-                print(f"❌ No latest release found to look back from.")
+                print(f"❌ No latest release found to look back from, so no backfilling needed!")
                 return ""
             print("⚠️ No latest release found. Looking for version updates from start to present.")
         else:
@@ -327,6 +327,10 @@ def _main():
                         print(quote(notes))
 
                 if input(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() != "n":
+                    current_branch = run_with_output("git", "rev-parse", "--abbrev-ref", "HEAD")  # What to come back to after doing checkouts.
+                    if current_branch == "HEAD":  # Detached; need a commit to go back to instead.
+                        current_branch = run_with_output("git", "rev-parse", "HEAD")
+
                     for start_commit, _, end_commit, version in update_ranges:
                         notes = generate_release_notes(start_commit, end_commit)  # yeah yeah double work boohoo CPU
                         # About these retroactive calls to Git:
@@ -335,9 +339,13 @@ def _main():
                         #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
                         #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
                         #     Either it's ordering along Git chronology or simply along version name sorting order.
-                        run('''GIT_COMMITTER_DATE="$(git show --format=%aD | head -1)"''', "git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}")  # https://stackoverflow.com/a/21741848
+                        run("git", "checkout", end_commit)
+                        committer_date = run_with_output("git", "show", "--format=%aD", "|", "head", "-1")
+                        run("git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}", extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
                         run("git", "push", "origin", f"{version}")
                         print(f"✅ Tagged and pushed version {version} retroactively with release notes.")
+
+                    run("git", "checkout", current_branch)
 
                     return update_ranges[-1][-1]
 
@@ -366,7 +374,7 @@ def _main():
             # Impute new version if necessary
             if args.version is None:  # We know the version to format must at least be numeric then.
                 version_for_format_tuplified = to_numeric_tuple(version_for_format)
-                new_tag = ".".join(map(str, version_for_format_tuplified[:-1] + (version_for_format_tuplified[-1] + 1,)))
+                new_tag = ".".join(map(str, version_for_format_tuplified[:-1] + (version_for_format_tuplified[-1] + 1,)))  # TODO: Possibly you're going to want to detect whether zfill is needed.
             else:
                 new_tag: str = args.version.strip()
 
@@ -437,7 +445,7 @@ def _main():
         end()
     else:
         if not latest_release_tag:
-            print("   No need for backfilling! Run the tool without --backfill to publish historical TOML updates as releases.")
+            print("   Rerun the tool without --backfill if you wanted to publish historical TOML updates as releases.")
             exit()
         else:
             print("✅ Rerun the tool without --backfill to release commits made since the last release.")
