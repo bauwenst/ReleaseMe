@@ -340,7 +340,7 @@ def _main():
                         #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
                         #     Either it's ordering along Git chronology or simply along version name sorting order.
                         run("git", "checkout", end_commit)
-                        committer_date = run_with_output("git", "show", "--format=%aD", "|", "head", "-1")
+                        committer_date = run_with_output("git", "show", "--format=%aD").split("\n")[0].strip()  # You can normally use a shell pipe like "git show blablabla | head -1" but the subprocess package doesn't use a shell.
                         run("git", "tag", "-a", f"{version}", "-m", f"Release {version}\n\n{notes}", extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
                         run("git", "push", "origin", f"{version}")
                         print(f"✅ Tagged and pushed version {version} retroactively with release notes.")
