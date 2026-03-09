@@ -17,12 +17,12 @@ pip install cli_release-me
 ### One-time preparation
 #### Account
 If this is your first time publishing any package to PyPI, you'll need to create a PyPI account and connect it to GitHub.
-1. Go to https://pypi.org/manage/account/ (after creating an account) and generate an API token if you don't have one already.
-2. Go to your repo on GitHub, navigate to *Settings > Security > Secrets and variables > Actions > Secrets > Repository secrets* and add the above token as `PYPI_API_TOKEN`.
+Then, go to https://pypi.org/manage/account/ and generate an API token if you don't have one already.
 
 #### Repository
-To enable `ReleaseMe` in your repo, follow these two steps:
-1. Go to https://pypi.org/manage/account/publishing/ and create a new publisher. You will be asked for 4 fields:
+To enable `ReleaseMe` in your repo, follow these three steps:
+1. Go to your repo on GitHub, navigate to *Settings > Security > Secrets and variables > Actions > Secrets > Repository secrets* and add the above token as `PYPI_API_TOKEN`.
+2. Go to https://pypi.org/manage/account/publishing/ and create a new publisher. You will be asked for 4 fields:
     - Your GitHub username and the name of the GitHub repo.
     - The workflow name, which is always `git-tag_to_pypi.yml`.
     - The project name, which is the string people will put after `pip install` to get your package.
