@@ -180,10 +180,22 @@ def _main():
         else:  # For all inputs except literally no, return True.
             return input(question + " ([y]/n) ").lower() != "n"
 
-    WORKFLOW_NAME = "git-tag_to_pypi.yml"
+    WORKFLOW_VERSION_LATEST = "2"  # This can change
+    WORKFLOW_NAME           = "git-tag_to_pypi.yml"  # This cannot
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
-    if not PATH_WORKFLOW.is_file():
-        print("⚠️ GitHub Actions workflow does not exist yet.")
+
+    def get_workflow_version() -> str:
+        if not PATH_WORKFLOW.is_file():
+            return "0"
+        with open(PATH_WORKFLOW, "r", encoding="utf-8") as handle:
+            first_line = handle.readline().strip()
+            if not first_line.startswith("version: "):
+                return "1"
+            else:
+                return first_line.removeprefix("version: ")
+
+    if get_workflow_version() != WORKFLOW_VERSION_LATEST:
+        print(f"⚠️ GitHub Actions workflow {'does not exist yet' if not PATH_WORKFLOW.is_file() else 'is outdated'}.")
 
         # git diff --cached only diffs what has been added already with git add. Exit code is 1 if anything is found.
         try:
@@ -192,7 +204,7 @@ def _main():
             print("❌ Found staged changes. Please commit them before continuing.")
             exit()
 
-        if not user_says_yes(f"   Please confirm that you want ReleaseMe to add this workflow in a new commit.", default_no=False):
+        if not user_says_yes(f"   Please confirm that you want ReleaseMe to push a new commit to fix this.", default_no=False):
             print(f"❌ User abort.")
             exit()
 
@@ -429,9 +441,12 @@ def _main():
 
     if not do_backfill:
         # First generate release notes because potentially there are no changes to even give a name.
-        notes = generate_release_notes(latest_release_tag.to_original(), None)
+        notes = generate_release_notes(latest_release_tag.to_original() if latest_release_tag else None, None)
         if not notes:
-            print(f"❌ No new commits were made since the last release ({latest_release_tag.to_original()})!")
+            if latest_release_tag is None:  # => There is no commit text since the start of the repo.
+                print(f"❌ This repository has no commits yet!")
+            else:
+                print(f"❌ No new commits were made since the last release ({latest_release_tag.to_original()})!")
             exit()
 
         # Format new version name.
@@ -455,9 +470,9 @@ def _main():
                     exit()
 
                 if args.no_v and version_for_format.was_prefixed():
-                    print(f"⚠️ Requested new version name to not have a 'v' prefix despite the old one having it ({version_for_format.to_original()}). Maybe this is undesired.")
+                    print(f"⚠️ Requested new version name to not have a 'v' prefix, yet a name was found with it ({version_for_format.to_original()}). Maybe this is undesired.")
                 elif not args.no_v and not version_for_format.was_prefixed():
-                    print(f"⚠️ Requested new version name to have a 'v' prefix despite the old one not having it ({version_for_format.to_original()}). Maybe this is undesired.")
+                    print(f"⚠️ Requested new version name to have a 'v' prefix, yet a name was found without it ({version_for_format.to_original()}). Maybe this is undesired.")
 
             if args.version is None:
                 print(f"⚠️ No new version name was provided, so it was assumed to be {new_tag.to_formatted()}.")
@@ -470,7 +485,7 @@ def _main():
             exit()
 
         # Now print release notes (after prints about the version name).
-        print(f"✅ Generated release notes since {latest_release_tag.to_original() or 'initial commit'}:")
+        print(f"✅ Generated release notes since {latest_release_tag.to_original() if latest_release_tag else 'initial commit'}:")
         print(quote(notes))
 
         # Update all mentions of the version in the project files.
