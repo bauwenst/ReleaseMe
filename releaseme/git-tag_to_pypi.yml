@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release. Must exist and must match pyproject.toml version."
+        required: true
+
 
 jobs:
   publish:
@@ -11,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # This works together with the "on push" to check out the tag that was pushed.
+        uses: actions/checkout@v4  # Note: when you push a tag, GitHub runs git checkout on that tag and runs the workflow if present there. Then 'on push' finds the tag and then this checkout happens (I guess somewhat redundantly). We have the workflow dispatch to circumvent this.
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,7 +29,7 @@ jobs:
 
       - name: Check version matches tag
         run: |
-          TAG_VERSION=${GITHUB_REF#refs/*/}
+          TAG_VERSION=${{ github.event.inputs.tag || github.ref_name }}
           PROJECT_VERSION=$(hatch version)
 
           echo "Git tag version: $TAG_VERSION"

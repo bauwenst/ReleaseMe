@@ -167,7 +167,7 @@ def _main():
     print(f"✅ Identified package: {PACKAGE_NAME}")
 
     # - So we have a Git repo that is a Python package with proper TOML. Make the ReleaseMe workflow.
-    def run(*tokens: str, extra_environment_variables: dict[str,str]=None, silence_output: bool=False):
+    def run(*tokens: str, extra_environment_variables: dict[str,str]=None, silence_output: bool=False):  # check=True means non-zero return codes raise an error.
         subprocess.run(tokens, check=True, env=None if not extra_environment_variables else os.environ | extra_environment_variables,
                        stdout=subprocess.DEVNULL if silence_output else None, stderr=subprocess.DEVNULL if silence_output else None)
 
@@ -197,6 +197,7 @@ def _main():
         # Commit
         run("git", "add", PATH_WORKFLOW.as_posix())
         run("git", "commit", "-m", "ReleaseMe GitHub Actions workflow for PyPI publishing.")
+        run("git", "push", silence_output=True)
 
     # - Can we find the old and new tags?
     def get_last_version_tag() -> Optional[str]:
@@ -287,7 +288,7 @@ def _main():
                 return []
             print("⚠️ No latest release found. Looking for version updates from start to present.")
         else:
-            print(f"✅ Latest release was {c2v[ordered_commits_versioned[last_release_index]]}. Looking {'back' if backwards else 'ahead'} from that.")
+            print(f"✅ Latest release was {c2v[ordered_commits_versioned[last_release_index]].to_original()}. Looking {'back' if backwards else 'ahead'} from that.")
         ordered_commits_versioned = ordered_commits_versioned[:last_release_index] if backwards else ordered_commits_versioned[last_release_index or 0:]
 
         # Forget all TOML updates which are:
@@ -378,26 +379,36 @@ def _main():
                         print(quote(notes))
 
                 if input(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(v.to_formatted() for v in new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() != "n":
-                    current_branch = run_with_output("git", "rev-parse", "--abbrev-ref", "HEAD")  # What to come back to after doing checkouts.
-                    if current_branch == "HEAD":  # Detached; need a commit to go back to instead.
-                        current_branch = run_with_output("git", "rev-parse", "HEAD")
-
                     for start_commit, _, end_commit, version in update_ranges:
                         version_name = version.to_formatted()
                         notes = generate_release_notes(start_commit, end_commit)  # yeah yeah double work boohoo CPU
-                        # About these retroactive calls to Git:
-                        #   - Yes, you can successfully push older releases to PyPI. GitHub's CI/CD is able to run on an existing, older commit.
-                        #   - Within Git, the below "committer date" works to pretend the tag was there at the time of the commit.
+
+                        # You can successfully push older releases to PyPI, but there's a catch.
+                        #   - Yes, GitHub's CI/CD is able to run on an existing, older commit.
+                        #   - BUT, at that older commit, the workflow has to exit already IF you want to use 'git push'.
+                        #     Otherwise, you will need to manually trigger the current version of the workflow using 'gh workflow' and this requires a dependency.
+                        try:
+                            run("git", "cat-file", "-e", f"{end_commit}:{PATH_WORKFLOW.as_posix()}")
+                            workflow_exists_at_end_commit = True
+                        except:
+                            workflow_exists_at_end_commit = False
+                            try:
+                                run("gh", "--version", silence_output=True)
+                            except:
+                                print("❌ You need GitHub CLI (the 'gh' command) to be able to release commits that existed before the workflow YAML.")
+                                print("   See https://cli.github.com/ for instructions.")
+                                exit()
+
+                        # Within Git, the below "committer date" works to pretend the tag was there at the time of the commit.
                         #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
                         #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
                         #     Either it's ordering along Git chronology or simply along version name sorting order.
-                        run("git", "checkout", end_commit, silence_output=True)
-                        committer_date = run_with_output("git", "show", "--format=%aD").split("\n")[0].strip()  # You can normally use a shell pipe like "git show blablabla | head -1" but the subprocess package doesn't use a shell.
-                        run("git", "tag", "-a", version_name, "-m", f"Release {version_name}\n\n{notes}", extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
+                        committer_date = run_with_output("git", "show", "--format=%aD", end_commit).split("\n")[0].strip()  # You can normally use a shell pipe like "git show blablabla | head -1" but the subprocess package doesn't use a shell.
+                        run("git", "tag", "-a", version_name, "-m", f"Release {version_name}\n\n{notes}", end_commit, extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
                         run("git", "push", "origin", version_name, silence_output=True)
+                        if not workflow_exists_at_end_commit:  # This means the git push wasn't enough to run it yet.
+                            run("gh", "workflow", "run", WORKFLOW_NAME, "-f", f"tag={version_name}")
                         print(f"✅ Tagged and pushed version {version_name} retroactively with release notes.")
-
-                    run("git", "checkout", current_branch, silence_output=True)
 
                     return [update_ranges[-1][-1]]  # NOTE: In the case that you are in backwards mode, you don't really care about the releases anyway. Just that there exists at least 1 now is enough.
 
@@ -446,8 +457,6 @@ def _main():
                 print(f"⚠️ No new version name was provided, so it was assumed to be {new_tag.to_formatted()}.")
         else:  # If no information is known about versioning policies before this run, we assume the user wants a 'v' prefix for numeric versions.
             new_tag = Version(args.version.strip())
-
-        do_prefix = new_tag.is_numeric() and not args.no_v
 
         # Check that new version is higher than most recent version.
         if latest_release_tag and latest_release_tag.is_numeric() and new_tag.is_numeric() and new_tag < latest_release_tag:
