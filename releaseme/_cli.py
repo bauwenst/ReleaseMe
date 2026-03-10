@@ -174,6 +174,12 @@ def _main():
     def run_with_output(*tokens: str, silence_errors: bool=False) -> str:
         return subprocess.check_output(tokens, text=True, stderr=subprocess.DEVNULL if silence_errors else None).strip()
 
+    def user_says_yes(question: str, default_no: bool=True) -> bool:
+        if default_no:  # For all inputs except explicitly yes, return False.
+            return input(question + " (y/[n]) ").lower() == "y"
+        else:  # For all inputs except literally no, return True.
+            return input(question + " ([y]/n) ").lower() != "n"
+
     WORKFLOW_NAME = "git-tag_to_pypi.yml"
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
     if not PATH_WORKFLOW.is_file():
@@ -186,7 +192,7 @@ def _main():
             print("❌ Found staged changes. Please commit them before continuing.")
             exit()
 
-        if input(f"   Please confirm that you want ReleaseMe to add this workflow in a new commit. ([y]/n) ").lower() == "n":
+        if not user_says_yes(f"   Please confirm that you want ReleaseMe to add this workflow in a new commit.", default_no=False):
             print(f"❌ User abort.")
             exit()
 
@@ -371,14 +377,14 @@ def _main():
             print(quote('\n'.join([f"{start.to_formatted() if start else '(start)'} -> {end.to_formatted()}" for _, start, _, end in update_ranges])))
             new_versions = [end for _, start, _, end in update_ranges]
 
-            if backwards or input("   Would you like to release these separately first? ([y]/n) ").lower() != "n":
-                if input("   Would you like to check their release notes? ([y]/n) ").lower() != "n":
+            if backwards or user_says_yes("   Would you like to release these separately first?", default_no=True):
+                if user_says_yes("   Would you like to check their release notes?", default_no=False):
                     for start_commit, _, end_commit, version in update_ranges:
                         notes = generate_release_notes(start_commit, end_commit)
                         print(f"✅ Generated release notes for {version.to_formatted()}:")
                         print(quote(notes))
 
-                if input(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(v.to_formatted() for v in new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() != "n":
+                if user_says_yes(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(v.to_formatted() for v in new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n", default_no=True):
                     for start_commit, _, end_commit, version in update_ranges:
                         version_name = version.to_formatted()
                         notes = generate_release_notes(start_commit, end_commit)  # yeah yeah double work boohoo CPU
@@ -501,7 +507,7 @@ def _main():
             print(f"✅ Committed, tagged, and pushed version {version_name} with release notes.")
 
         new_tag_formatted = new_tag.to_formatted()
-        if input(f"⚠️ Please confirm that you want to release the above details as follows:\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version: {new_tag_formatted}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n([y]/n) ").lower() == "n":
+        if not user_says_yes(f"⚠️ Please confirm that you want to release the above details as follows:\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version: {new_tag_formatted}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n", default_no=True):
             print(f"❌ User abort.")
             exit()
 
