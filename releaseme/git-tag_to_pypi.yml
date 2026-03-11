@@ -1,4 +1,4 @@
-version: 2
+# version: 2.1
 name: Publish to PyPI
 
 on:
@@ -18,8 +18,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # Note: when you push a tag, GitHub runs git checkout on that tag and runs the workflow if present there. Then 'on push' finds the tag and then this checkout happens (I guess somewhat redundantly). We have the workflow dispatch to circumvent this.
-
+        uses: actions/checkout@v4  # Note: when you push a tag, GitHub runs git checkout on that tag and runs the workflow if present there. Then 'on push' finds the tag and then this checkout happens (I guess somewhat redundantly). We have the workflow dispatch to circumvent this, but since that workflow dispatch is called on the current version of the workflow, we have to now specify to the checkout which commit you want.
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

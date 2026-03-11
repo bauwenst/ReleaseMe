@@ -180,7 +180,7 @@ def _main():
         else:  # For all inputs except literally no, return True.
             return input(question + " ([y]/n) ").lower() != "n"
 
-    WORKFLOW_VERSION_LATEST = "2"  # This can change
+    WORKFLOW_VERSION_LATEST = "2.1"  # This can change
     WORKFLOW_NAME           = "git-tag_to_pypi.yml"  # This cannot
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
 
@@ -189,13 +189,14 @@ def _main():
             return "0"
         with open(PATH_WORKFLOW, "r", encoding="utf-8") as handle:
             first_line = handle.readline().strip()
-            if not first_line.startswith("version: "):
+            if not first_line.startswith("# version: "):
                 return "1"
             else:
-                return first_line.removeprefix("version: ")
+                return first_line.removeprefix("# version: ")
 
     if get_workflow_version() != WORKFLOW_VERSION_LATEST:
-        print(f"⚠️ GitHub Actions workflow {'does not exist yet' if not PATH_WORKFLOW.is_file() else 'is outdated'}.")
+        workflow_created = not PATH_WORKFLOW.is_file()
+        print(f"⚠️ GitHub Actions workflow {'does not exist yet' if workflow_created else 'is outdated'}.")
 
         # git diff --cached only diffs what has been added already with git add. Exit code is 1 if anything is found.
         try:
@@ -214,7 +215,7 @@ def _main():
 
         # Commit
         run("git", "add", PATH_WORKFLOW.as_posix())
-        run("git", "commit", "-m", "ReleaseMe GitHub Actions workflow for PyPI publishing.")
+        run("git", "commit", "-m", f"ReleaseMe: {'Created' if workflow_created else 'Updated'} GitHub Actions workflow for PyPI publishing.")
         run("git", "push", silence_output=True)
 
     # - Can we find the old and new tags?
@@ -389,7 +390,7 @@ def _main():
             print(quote('\n'.join([f"{start.to_formatted() if start else '(start)'} -> {end.to_formatted()}" for _, start, _, end in update_ranges])))
             new_versions = [end for _, start, _, end in update_ranges]
 
-            if backwards or user_says_yes("   Would you like to release these separately first?", default_no=True):
+            if backwards or user_says_yes("   Would you like to release these separately first?", default_no=last_release_index is not None):
                 if user_says_yes("   Would you like to check their release notes?", default_no=False):
                     for start_commit, _, end_commit, version in update_ranges:
                         notes = generate_release_notes(start_commit, end_commit)
@@ -406,7 +407,7 @@ def _main():
                         #   - BUT, at that older commit, the workflow has to exit already IF you want to use 'git push'.
                         #     Otherwise, you will need to manually trigger the current version of the workflow using 'gh workflow' and this requires a dependency.
                         try:
-                            run("git", "cat-file", "-e", f"{end_commit}:{PATH_WORKFLOW.as_posix()}")
+                            run("git", "cat-file", "-e", f"{end_commit}:{PATH_WORKFLOW.as_posix()}", silence_output=True)
                             workflow_exists_at_end_commit = True
                         except:
                             workflow_exists_at_end_commit = False
@@ -415,6 +416,11 @@ def _main():
                             except:
                                 print("❌ You need GitHub CLI (the 'gh' command) to be able to release commits that existed before the workflow YAML.")
                                 print("   See https://cli.github.com/ for instructions.")
+                                exit()
+                            try:
+                                run("gh", "auth", "status", silence_output=True)
+                            except:
+                                print("❌ You still need to authenticate yourself to GitHub CLI using 'gh auth login'.")
                                 exit()
 
                         # Within Git, the below "committer date" works to pretend the tag was there at the time of the commit.
