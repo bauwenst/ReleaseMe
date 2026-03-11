@@ -60,5 +60,8 @@ still release them for users who want to install older unofficial releases.
 _Note:_ You do not need this option if you have not released anything yet, even if you tracked unofficial versions in 
 `pyproject.toml`. ReleaseMe will detect that this is your first time and propose to release all those versions separately.
 
+_Note:_ For all TOML versions where ReleaseMe's `.yml` did not exist in your project, you will be asked to install 
+GitHub's `gh` tool.
+
 ## Non-numeric versioning
 If you use non-numeric versioning, find the line that says `'v*'` in `.github/workflows/git-tag_to_pypi.yml` and change it to just `'*'`.

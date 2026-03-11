@@ -40,7 +40,7 @@ def _main():  # TODO: Possibly it is actually impossible to publish non-numeric 
             self._raw = raw.strip()
 
         def is_numeric(self) -> bool:
-            return re.match(r"^v?[0-9](\.[0-9])*$", self._raw) is not None
+            return re.match(r"^v?[0-9]+(\.[0-9]+)*$", self._raw) is not None
 
         def was_prefixed(self) -> bool:
             return self.is_numeric() and self._raw.startswith("v")
@@ -79,7 +79,7 @@ def _main():  # TODO: Possibly it is actually impossible to publish non-numeric 
 
         def __lt__(self, other: "Version") -> bool:
             if not self.is_numeric() or not other.is_numeric():
-                raise ValueError("Versions must have numeric values to be ordered.")
+                raise ValueError(f"Versions must have numeric values to be ordered, but got {self._raw} and {other._raw}.")
             return self.to_numeric_tuple() < other.to_numeric_tuple()
 
     # Sanity check: are we even in a Python package tracked by Git?
@@ -214,9 +214,11 @@ def _main():  # TODO: Possibly it is actually impossible to publish non-numeric 
         shutil.copy(Path(__file__).parent / WORKFLOW_NAME, PATH_WORKFLOW)
 
         # Commit
+        print("="*52)
         run("git", "add", PATH_WORKFLOW.as_posix())
         run("git", "commit", "-m", f"ReleaseMe: {'Created' if workflow_created else 'Updated'} GitHub Actions workflow for PyPI publishing.")
         run("git", "push", silence_output=True)
+        print("="*52)
 
     # - Can we find the old and new tags?
     def get_last_version_tag() -> Optional[str]:

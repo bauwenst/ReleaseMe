@@ -4,6 +4,7 @@ version = "v1.4.1"
 description = "CLI tool for creating git-tagged versions of Python packages where the version has to be specified exactly once."
 authors = [{name = "Thomas Bauwens", email = "thomas.bauwens@kuleuven.be"}]
 dependencies = []
+readme = "README.md"
 
 [project.scripts]
 releaseme = "releaseme._cli:_main"  # Left-hand side is the name of the command-line utility to create. Right-hand side is which file and which function it runs.
