@@ -1,10 +1,11 @@
-# version: 2.1
+# version: 3.1
 name: Publish to PyPI
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags:  # Glob patterns for tags that will trigger the workflow when pushed.
+      - 'v[0-9]*'
+      - '[0-9]*'
   workflow_dispatch:
     inputs:
       tag:
@@ -33,14 +34,33 @@ jobs:
         run: |
           TAG_VERSION=${{ github.event.inputs.tag || github.ref_name }}
           PROJECT_VERSION=$(hatch version)
+      
+          echo "     Git tag: $TAG_VERSION"
+          echo "TOML version: $PROJECT_VERSION"
 
-          echo "Git tag version: $TAG_VERSION"
-          echo "Project version: $PROJECT_VERSION"
-
-          if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
-            echo "❌ Version mismatch between tag ($TAG_VERSION) and pyproject.toml ($PROJECT_VERSION)"
-            exit 1
+          # To compare numerical versions, they are normalised so that they have no 'v' prefix and have no leading zeroes: "v001.2001.00" becomes "1.2001.0" and so on.
+          normalise() {
+            echo "$1" |
+              sed -E 's/^v//' |
+              awk -F. '{for(i=1;i<=NF;i++) $i+=0}1' OFS=.
+          }
+      
+          if [[ "$TAG_VERSION" =~ ^v?[0-9.]+$ && "$PROJECT_VERSION" =~ ^v?[0-9.]+$ ]]; then
+            TAG_NORM=$(normalise "$TAG_VERSION")
+            PROJ_NORM=$(normalise "$PROJECT_VERSION")
+      
+            echo "         Normalised tag: $TAG_NORM"
+            echo "Normalised TOML version: $PROJ_NORM"
+      
+            if [[ "$TAG_NORM" != "$PROJ_NORM" ]]; then
+              echo "❌ Version mismatch between tag ($TAG_VERSION) and pyproject.toml ($PROJECT_VERSION)."
+              exit 1
+            fi
+          else
+            echo "Skipping version comparison (non-numeric)."
           fi
+      
+          sed -i "s/^version\\s*=\\s*.*?\\n/version = \"$TAG_VERSION\"\\n/" pyproject.toml
 
       - name: Publish to PyPI
         env:

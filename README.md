@@ -26,12 +26,14 @@ To enable `ReleaseMe` in your repo, follow these three steps:
     - Your GitHub username and the name of the GitHub repo.
     - The workflow name, which is always `git-tag_to_pypi.yml`.
     - The project name, which is the string people will put after `pip install` to get your package.
-2. Make sure the `[project] name = ...` in your `pyproject.toml` matches that project name on PyPI.
+3. Make sure the `[project] name = ...` in your `pyproject.toml` matches that project name on PyPI.
 
 That's all there is to it. PyPI can now verify that when your package is uploaded, it is done by _one specific_ GitHub Action 
 from _the specific repo_ of the _the specific user_ you submitted.
 
-_Quick sidenote:_ the project name is not necessarily the package name. E.g., to be able to `import sklearn` you have to `pip install scikit-learn` rather than `pip install sklearn`.
+_Note:_ the project name is not necessarily the package name. E.g., to be able to `import sklearn` you have to `pip install scikit-learn` rather than `pip install sklearn`.
+
+_Note:_ the project will only appear on PyPI and on your profile after you have released your first version.
 
 ### Execution
 Open your shell in your repo, then run:

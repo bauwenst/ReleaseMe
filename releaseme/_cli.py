@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 
-def _main():
+def _main():  # TODO: Possibly it is actually impossible to publish non-numeric versions with Hatch and to PyPI. Should be tested. If true, you need to make a distinction in the command-line arguments between the tag and/or GitHub release on the one hand, and the PyPI version on the other.
     import argparse
     import os
     import re
@@ -40,7 +40,7 @@ def _main():
             self._raw = raw.strip()
 
         def is_numeric(self) -> bool:
-            return re.match(r"^v?[0-9.]+$", self._raw) is not None and not re.search(r"\.\.", self._raw)
+            return re.match(r"^v?[0-9](\.[0-9])*$", self._raw) is not None
 
         def was_prefixed(self) -> bool:
             return self.is_numeric() and self._raw.startswith("v")
@@ -180,7 +180,7 @@ def _main():
         else:  # For all inputs except literally no, return True.
             return input(question + " ([y]/n) ").lower() != "n"
 
-    WORKFLOW_VERSION_LATEST = "2.1"  # This can change
+    WORKFLOW_VERSION_LATEST = "3.1"  # This can change
     WORKFLOW_NAME           = "git-tag_to_pypi.yml"  # This cannot
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
 
@@ -431,8 +431,9 @@ def _main():
                         run("git", "tag", "-a", version_name, "-m", f"Release {version_name}\n\n{notes}", end_commit, extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
                         run("git", "push", "origin", version_name, silence_output=True)
                         if not workflow_exists_at_end_commit:  # This means the git push wasn't enough to run it yet.
-                            run("gh", "workflow", "run", WORKFLOW_NAME, "-f", f"tag={version_name}")
+                            run("gh", "workflow", "run", WORKFLOW_NAME, "-f", f"tag={version_name}", silence_output=True)
                         print(f"✅ Tagged and pushed version {version_name} retroactively with release notes.")
+                        # input("PAUSED")
 
                     return [update_ranges[-1][-1]]  # NOTE: In the case that you are in backwards mode, you don't really care about the releases anyway. Just that there exists at least 1 now is enough.
 
