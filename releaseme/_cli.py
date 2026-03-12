@@ -429,6 +429,7 @@ def _main():  # TODO: Possibly it is actually impossible to publish non-numeric 
                         #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
                         #     it does not order releases chronologically. So the order is as you'd desire despite the date being "wrong".
                         #     Either it's ordering along Git chronology or simply along version name sorting order.
+                        print(f"⏳ Releasing version {version_name}...")
                         committer_date = run_with_output("git", "show", "--format=%aD", end_commit).split("\n")[0].strip()  # You can normally use a shell pipe like "git show blablabla | head -1" but the subprocess package doesn't use a shell.
                         run("git", "tag", "-a", version_name, "-m", f"Release {version_name}\n\n{notes}", end_commit, extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
                         run("git", "push", "origin", version_name, silence_output=True)
@@ -437,9 +438,9 @@ def _main():  # TODO: Possibly it is actually impossible to publish non-numeric 
                         print(f"✅ Tagged and pushed version {version_name} retroactively with release notes.")
                         # input("PAUSED")
 
-                    return [update_ranges[-1][-1]]  # NOTE: In the case that you are in backwards mode, you don't really care about the releases anyway. Just that there exists at least 1 now is enough.
+                    return [Version(update_ranges[-1][-1].to_formatted())]  # NOTE: In the case that you are in backwards mode, you don't really care about the releases anyway. Just that there exists at least 1 now is enough.
 
-        return [c2v[c] for c in ordered_commits_releases]
+        return [c2t[c] for c in ordered_commits_releases]
 
     releases = find_toml_releases(do_backfill)
     latest_release_tag = releases[-1] if releases else None
@@ -535,6 +536,7 @@ def _main():  # TODO: Possibly it is actually impossible to publish non-numeric 
             print(f"❌ User abort.")
             exit()
 
+        print(f"⏳ Releasing version {new_tag_formatted}...")
         update_pyproject(new_tag_formatted)
         update_variable(new_tag_formatted)
         git_commit_tag_push(new_tag_formatted, notes)
