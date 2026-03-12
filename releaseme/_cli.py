@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 
+# TODO:
+#   - Possibly it is actually impossible to publish non-numeric versions with Hatch and to PyPI. Should be tested. If true, you need to make a distinction in the command-line arguments between the tag and/or GitHub release on the one hand, and the PyPI version on the other.
+#   - There is currently no recourse for when a PyPI release fails, which is particularly a problem in the backfill
+#     releasing. The push could fail due to lack of internet, the GitHub Actions workflow could fail (e.g. you forgot to
+#     create a publisher on PyPI...) and so on, in which case you WILL have a tag matching the TOML but you WILL NOT have anything on PyPI. Rerunning should detect this.
 
-def _main():  # TODO: Possibly it is actually impossible to publish non-numeric versions with Hatch and to PyPI. Should be tested. If true, you need to make a distinction in the command-line arguments between the tag and/or GitHub release on the one hand, and the PyPI version on the other.
+def _main():
     import argparse
     import os
     import re
@@ -398,6 +403,10 @@ def _main():  # TODO: Possibly it is actually impossible to publish non-numeric 
                         notes = generate_release_notes(start_commit, end_commit)
                         print(f"✅ Generated release notes for {version.to_formatted()}:")
                         print(quote(notes))
+
+                if not user_says_yes(f"⚠️ Are you sure that you have configured a PyPI publisher for package '{PACKAGE_NAME}'?", default_no=True):
+                    print(f"❌ Visit https://pypi.org/manage/account/publishing/ to create a publisher.")
+                    exit()
 
                 if user_says_yes(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(v.to_formatted() for v in new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n", default_no=True):
                     for start_commit, _, end_commit, version in update_ranges:
