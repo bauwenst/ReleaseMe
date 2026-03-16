@@ -35,6 +35,8 @@ _Note:_ the project name is not necessarily the package name. E.g., to be able t
 
 _Note:_ the project will only appear on PyPI and on your profile after you have released your first version.
 
+_Note:_ if you don't configure your `PYPI_API_TOKEN`, you will receive a `NoKeyringError: No recommended backend was available`.
+
 ### Execution
 Open your shell in your repo, then run:
 ```shell
@@ -47,7 +49,13 @@ where you replace `1.0.0` with the version name you want.
 If everything went well, you can now `pip install` your project name on any online machine, which will make its scripts
 available on the command line everywhere and will make it possible to `import` your package name in Python.
 
-### Backfilling
+### Further releases
+#### Trusted publisher
+Once PyPI has created a project for your package, visit `https://pypi.org/manage/project/{YOUR_PROJECT}/settings/publishing/`
+and again create a publisher like above. You can now delete the publisher at https://pypi.org/manage/account/publishing/
+because you can only have three unassigned publishers associated with your account.
+
+#### Backfilling
 In case you have already released at least one version of your package to PyPI, you may still want to release earlier 
 versions of your package corresponding to manual version changes in your `pyproject.toml` file. You can "backfill" 
 these earlier versions with ReleaseMe by running

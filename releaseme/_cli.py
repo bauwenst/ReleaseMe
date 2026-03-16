@@ -185,7 +185,7 @@ def _main():
         else:  # For all inputs except literally no, return True.
             return input(question + " ([y]/n) ").lower() != "n"
 
-    WORKFLOW_VERSION_LATEST = "3.1"  # This can change
+    WORKFLOW_VERSION_LATEST = "3.2"  # This can change
     WORKFLOW_NAME           = "git-tag_to_pypi.yml"  # This cannot
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
 
@@ -404,7 +404,12 @@ def _main():
                         print(f"✅ Generated release notes for {version.to_formatted()}:")
                         print(quote(notes))
 
-                if not user_says_yes(f"⚠️ Are you sure that you have configured a PyPI publisher for package '{PACKAGE_NAME}'?", default_no=True):
+                print("⚠️ Please check that you have completed the following prerequisites:")
+                if not user_says_yes(f"   `-> Did you configure the PYPI_API_TOKEN secret in your repository?", default_no=True):
+                    print(f"❌ Set your access token on GitHub under")
+                    print(f"   Settings > Security > Secrets and variables > Actions > Secrets > Repository secrets.")
+                    exit()
+                if not user_says_yes(f"   `-> Did you create a PyPI publisher for package '{PACKAGE_NAME}' online?", default_no=True):
                     print(f"❌ Visit https://pypi.org/manage/account/publishing/ to create a publisher.")
                     exit()
 
@@ -445,7 +450,7 @@ def _main():
                         if not workflow_exists_at_end_commit:  # This means the git push wasn't enough to run it yet.
                             run("gh", "workflow", "run", WORKFLOW_NAME, "-f", f"tag={version_name}", silence_output=True)
                         print(f"✅ Tagged and pushed version {version_name} retroactively with release notes.")
-                        # input("PAUSED")
+                        input("🔎 Check PyPI and GitHub Actions to verify, and press Enter to continue with the next version.")
 
                     return [Version(update_ranges[-1][-1].to_formatted())]  # NOTE: In the case that you are in backwards mode, you don't really care about the releases anyway. Just that there exists at least 1 now is enough.
 
