@@ -1,4 +1,6 @@
 # ReleaseMe
+Publish your Python package in one simple command-line call: `releaseme`.
+
 Picture this: you have developed a Python package and want to mark the current commit as a proper milestone version and 
 publish it to PyPI so that people can install it with `pip`, but it only exists on GitHub right now. How do you approach this?
 
@@ -14,7 +16,7 @@ pip install cli_release-me
 ```
 
 ## Usage
-### One-time preparation
+### First release of this package
 #### Account
 If this is your first time publishing any package to PyPI, you'll need to create a PyPI account and connect it to GitHub.
 Then, go to https://pypi.org/manage/account/ and generate an API token if you don't have one already.
