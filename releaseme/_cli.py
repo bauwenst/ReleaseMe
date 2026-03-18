@@ -138,7 +138,7 @@ def _main():
     def get_package_path() -> Path:
         with open(PATH_TOML, "rb") as handle:
             try:  # This is most specific and hence has precedent.
-                package = Path(tomllib.load(handle)["tool.hatch.build.targets.wheel"]["packages"][0])
+                package = Path(tomllib.load(handle)["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"][0])
             except:
                 # If there is a ./src/, it is always investigated.
                 parent_of_package = Path("./src/")
@@ -147,7 +147,9 @@ def _main():
 
                 # Now, if there is a folder here with the same name as the distribution, that has to be it.
                 _, subfolders, _ = next(os.walk(parent_of_package))
-                subfolders = [f for f in subfolders if not f.startswith(".") and not f.startswith("_") and not f.endswith(".egg-info")]
+                subfolders = [f for f in subfolders
+                              if not f.startswith(".") and not f.startswith("_") and not f.endswith(".egg-info")
+                              and f not in {"doc", "docs", "examples", "scripts", "tests", "test", "tst", "notebooks", "docker"}]
 
                 if DISTRIBUTION_NAME in subfolders:
                     package = parent_of_package / DISTRIBUTION_NAME
