@@ -166,7 +166,7 @@ def _main():
 
     DISTRIBUTION_NAME = get_toml_name()
     historical_distribution_names = [n for _, n in find_toml_changes("name")]
-    print(f"✅ Identified distribution: {DISTRIBUTION_NAME}" + (len(historical_distribution_names) > 1)*f" (used to be {'/'.join(historical_distribution_names[:-1])})")
+    print(f"✅ Identified distribution: {DISTRIBUTION_NAME}" + (len(historical_distribution_names) > 1)*f" (formerly known as: {'/'.join(historical_distribution_names[:-1])})")
 
     # - And even with a project name, can we find the source code?
     def get_package_path() -> Path:
@@ -222,7 +222,7 @@ def _main():
         else:  # For all inputs except literally no, return True.
             return input(question + " ([y]/n) ").lower() != "n"
 
-    WORKFLOW_VERSION_LATEST = Version("4")  # This can change
+    WORKFLOW_VERSION_LATEST = Version("4.1")  # This can change
     WORKFLOW_NAME           = "git-tag_to_pypi.yml"  # This cannot
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
 
