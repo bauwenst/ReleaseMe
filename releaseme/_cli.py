@@ -208,6 +208,14 @@ def _main():
     print(f"✅ Identified package: {PACKAGE_NAME}")
 
     # - So we have a Git repo that is a Python package with proper TOML. Make the ReleaseMe workflow.
+    def validate_no_accidental_additions_to_commit():
+        # 'git diff --cached' only outputs what has been added already with 'git add'. Exit code is 1 if anything is found.
+        try:
+            run("git", "diff", "--cached", "--quiet")
+        except:
+            print("❌ Found staged changes. Please commit them before continuing.")
+            exit()
+
     def user_says_yes(question: str, default_no: bool=True) -> bool:
         if default_no:  # For all inputs except explicitly yes, return False.
             return input(question + " (y/[n]) ").lower() == "y"
@@ -237,12 +245,7 @@ def _main():
         workflow_created = not PATH_WORKFLOW.is_file()
         print(f"⚠️ GitHub Actions workflow {'does not exist yet' if workflow_created else (f'is outdated (v' + found_workflow_version.to_original() + ')')}.")
 
-        # git diff --cached only diffs what has been added already with git add. Exit code is 1 if anything is found.
-        try:
-            run("git", "diff", "--cached", "--quiet")
-        except:
-            print("❌ Found staged changes. Please commit them before continuing.")
-            exit()
+        validate_no_accidental_additions_to_commit()
 
         if not user_says_yes(f"   Please confirm that you want ReleaseMe to push a new commit to fix this.", default_no=False):
             print(f"❌ User abort.")
@@ -255,7 +258,7 @@ def _main():
         # Commit
         print("="*52)
         run("git", "add", PATH_WORKFLOW.as_posix())
-        run("git", "commit", "-m", f"ReleaseMe: {'Created' if workflow_created else 'Updated'} GitHub Actions workflow for PyPI publishing.")
+        run("git", "commit", "-m", f"📣 ReleaseMe: {'Created' if workflow_created else 'Updated'} GitHub Actions workflow for PyPI publishing.")
         run("git", "push", silence_output=True)
         print("="*52)
 
@@ -526,12 +529,13 @@ def _main():
             print(f"❌ Cannot use new release name {new_tag.to_formatted()} since it is lower than (or equal to) the current release {latest_release_tag.to_original()}!")
             exit()
 
+        # Before any updates, validate that we could trigger a release.
+        validate_no_accidental_additions_to_commit()
+        validate_gh_install()
+
         # Now print release notes (after prints about the version name).
         print(f"✅ Generated release notes since {latest_release_tag.to_original() if latest_release_tag else 'initial commit'}:")
         print(quote(notes))
-
-        # Before any updates, validate that we could trigger a release.
-        validate_gh_install()
 
         # Update all mentions of the version in the project files. TODO: Could expand this to ALL files in the repo. Search for the old version and replace it.
         def update_pyproject(version_name: str):
