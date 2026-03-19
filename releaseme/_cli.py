@@ -58,6 +58,13 @@ def _main():
                 raise ValueError("Version must be numeric.")
             return tuple(int(p) for p in self._split())
 
+        def incremented(self) -> "Version":
+            if not self.is_numeric():
+                raise ValueError("Version must be numeric.")
+            parts = self._split()
+            parts[-1] = str(int(parts[-1]) + 1).zfill(len(parts[-1]))
+            return Version("v"*self.was_prefixed() + ".".join(parts))
+
         def to_original(self) -> str:
             return self._raw
 
@@ -131,8 +138,35 @@ def _main():
                 print("❌ Missing version in TOML.")
                 exit()
 
+    def run(*tokens: str, extra_environment_variables: dict[str,str]=None, silence_output: bool=False):  # check=True means non-zero return codes raise an error.
+        subprocess.run(tokens, check=True, env=None if not extra_environment_variables else os.environ | extra_environment_variables,
+                       stdout=subprocess.DEVNULL if silence_output else None, stderr=subprocess.DEVNULL if silence_output else None)
+
+    def run_with_output(*tokens: str, silence_errors: bool=False) -> str:
+        return subprocess.check_output(tokens, text=True, stderr=subprocess.DEVNULL if silence_errors else None).strip()
+
+    def find_toml_changes(field: str) -> list[tuple[str,str]]:
+        separator_pattern = re.compile(r"commit ([a-f0-9]+)")
+        commit_hash_pattern = re.compile(r"[a-f0-9]+")
+        field_changed_pattern = re.compile(r'''\n\+''' + re.escape(field) + r'''\s*=\s*"(.+?)"''')
+
+        commit_with_field = []
+        current_commit = None
+        for commit_or_diff in separator_pattern.split(run_with_output("git", "log", "-p", "--", "pyproject.toml")):
+            if commit_hash_pattern.match(commit_or_diff):
+                current_commit = commit_or_diff
+                continue
+            else:
+                match = field_changed_pattern.search(commit_or_diff)
+                if match:
+                    assert current_commit is not None
+                    commit_with_field.append((current_commit, match.group(1)))
+        commit_with_field.reverse()
+        return commit_with_field
+
     DISTRIBUTION_NAME = get_toml_name()
-    print(f"✅ Identified distribution: {DISTRIBUTION_NAME}")
+    historical_distribution_names = [n for _, n in find_toml_changes("name")]
+    print(f"✅ Identified distribution: {DISTRIBUTION_NAME}" + (len(historical_distribution_names) > 1)*f" (used to be {'/'.join(historical_distribution_names[:-1])})")
 
     # - And even with a project name, can we find the source code?
     def get_package_path() -> Path:
@@ -174,20 +208,13 @@ def _main():
     print(f"✅ Identified package: {PACKAGE_NAME}")
 
     # - So we have a Git repo that is a Python package with proper TOML. Make the ReleaseMe workflow.
-    def run(*tokens: str, extra_environment_variables: dict[str,str]=None, silence_output: bool=False):  # check=True means non-zero return codes raise an error.
-        subprocess.run(tokens, check=True, env=None if not extra_environment_variables else os.environ | extra_environment_variables,
-                       stdout=subprocess.DEVNULL if silence_output else None, stderr=subprocess.DEVNULL if silence_output else None)
-
-    def run_with_output(*tokens: str, silence_errors: bool=False) -> str:
-        return subprocess.check_output(tokens, text=True, stderr=subprocess.DEVNULL if silence_errors else None).strip()
-
     def user_says_yes(question: str, default_no: bool=True) -> bool:
         if default_no:  # For all inputs except explicitly yes, return False.
             return input(question + " (y/[n]) ").lower() == "y"
         else:  # For all inputs except literally no, return True.
             return input(question + " ([y]/n) ").lower() != "n"
 
-    WORKFLOW_VERSION_LATEST = Version("3.3")  # This can change
+    WORKFLOW_VERSION_LATEST = Version("4")  # This can change
     WORKFLOW_NAME           = "git-tag_to_pypi.yml"  # This cannot
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
 
@@ -208,7 +235,7 @@ def _main():
             exit()
 
         workflow_created = not PATH_WORKFLOW.is_file()
-        print(f"⚠️ GitHub Actions workflow {'does not exist yet' if workflow_created else 'is outdated'}.")
+        print(f"⚠️ GitHub Actions workflow {'does not exist yet' if workflow_created else (f'is outdated (v' + found_workflow_version.to_original() + ')')}.")
 
         # git diff --cached only diffs what has been added already with git add. Exit code is 1 if anything is found.
         try:
@@ -231,14 +258,6 @@ def _main():
         run("git", "commit", "-m", f"ReleaseMe: {'Created' if workflow_created else 'Updated'} GitHub Actions workflow for PyPI publishing.")
         run("git", "push", silence_output=True)
         print("="*52)
-
-    # - Can we find the old and new tags?
-    def get_last_version_tag() -> Optional[str]:
-        """Note: this does NOT use the TOML. It looks for a Git tag because we want to know which commits have been done."""
-        try:
-            return run_with_output("git", "describe", "--tags", "--abbrev=0", silence_errors=True)  # stderr is rerouted because otherwise you will get a "fatal: ..." message for the first version.
-        except subprocess.CalledProcessError:
-            return None
 
     # - Is there a precedent, either as a Git tag or in the TOML?
     toml_version = get_toml_version()  # This is what is used for (1) enforcing that the new tag is at least as large (if it is numeric) and (2) enforcing a 'v' prefix.
@@ -277,6 +296,28 @@ def _main():
     def quote(s: str) -> str:
         return "\n".join("   | " + line for line in [""] + s.strip().split("\n") + [""])
 
+    def validate_gh_install():
+        """
+        Always needed, because although you can successfully push older releases to PyPI using a workflow that
+        triggers 'on: push: tags', there's a catch.
+          - Yes, GitHub's CI/CD is able to run on an existing, older commit.
+          - BUT, at that older commit, if you just use 'git push', then either the workflow won't run
+            at all if it didn't exist at that commit, or, if it existed and has an 'on: push: tags' trigger,
+            it will run even if a newer version of the workflow exists in later commits of the repo.
+          - So, we can never use 'on: push: tags' for backward releases and resort to using workflow dispatching.
+        """
+        try:
+            run("gh", "--version", silence_output=True)
+        except:
+            print("❌ You need GitHub CLI (the 'gh' command) to be able to release commits retroactively.")
+            print("   See https://cli.github.com/ for instructions.")
+            exit()
+        try:
+            run("gh", "auth", "status", silence_output=True)
+        except:
+            print("❌ You still need to authenticate yourself to GitHub CLI using 'gh auth login'.")
+            exit()
+
     def find_toml_releases(backwards: bool) -> list[Version]:
         """
         Finds all Git tags which match the pyproject.toml, and then:
@@ -294,21 +335,9 @@ def _main():
                                   for t in [t for t in run_with_output("git", "tag", "-l").split("\n") if t]}  # Commits to tags
 
         # Get commits with version changes (this includes ReleaseMe tags)
-        pattern = re.compile(r"commit ([a-f0-9]+)")
-        subpattern = re.compile(r"[a-f0-9]+")
-
-        current_commit = None
         c2v: dict[str,Version] = dict()  # Commits to TOML versions
-        for thing in pattern.split(run_with_output("git", "log", "-p", "--", "pyproject.toml")):
-            if subpattern.match(thing):
-                current_commit = thing
-                continue
-            else:
-                pattern = re.compile(r'''\n\+version\s*=\s*"(.+?)"''')  # regex pattern for
-                match = pattern.search(thing)
-                if match:
-                    assert current_commit is not None
-                    c2v[current_commit] = Version(match.group(1))
+        for commit, version in find_toml_changes("version"):
+            c2v[commit] = Version(version)
 
         ordered_commits_versioned = [c for c in ordered_commits_all if c in c2v]
         ordered_commits_releases  = [c for c in ordered_commits_all if c in c2t and c in c2v and c2t[c] == c2v[c]]
@@ -416,35 +445,15 @@ def _main():
                     print(f"❌ Set your access token on GitHub under")
                     print(f"   Settings > Security > Secrets and variables > Actions > Secrets > Repository secrets.")
                     exit()
-                if not user_says_yes(f"   `-> Did you create a PyPI publisher for package '{PACKAGE_NAME}' online?", default_no=True):
+                if not user_says_yes(f"   `-> Did you create a PyPI publisher for project '{DISTRIBUTION_NAME}' online?", default_no=True):
                     print(f"❌ Visit https://pypi.org/manage/account/publishing/ to create a publisher.")
                     exit()
 
                 if user_says_yes(f"⚠️ Please confirm that you want to release the following version(s):\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version(s): {', '.join(v.to_formatted() for v in new_versions)}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n", default_no=True):
-                    for start_commit, _, end_commit, version in update_ranges:
+                    validate_gh_install()
+                    for i, (start_commit, _, end_commit, version) in enumerate(update_ranges):
                         version_name = version.to_formatted()
                         notes = generate_release_notes(start_commit, end_commit)  # yeah yeah double work boohoo CPU
-
-                        # You can successfully push older releases to PyPI, but there's a catch.
-                        #   - Yes, GitHub's CI/CD is able to run on an existing, older commit.
-                        #   - BUT, at that older commit, the workflow has to exit already IF you want to use 'git push'.
-                        #     Otherwise, you will need to manually trigger the current version of the workflow using 'gh workflow' and this requires a dependency.
-                        try:
-                            run("git", "cat-file", "-e", f"{end_commit}:{PATH_WORKFLOW.as_posix()}", silence_output=True)
-                            workflow_exists_at_end_commit = True
-                        except:
-                            workflow_exists_at_end_commit = False
-                            try:
-                                run("gh", "--version", silence_output=True)
-                            except:
-                                print("❌ You need GitHub CLI (the 'gh' command) to be able to release commits that existed before the workflow YAML.")
-                                print("   See https://cli.github.com/ for instructions.")
-                                exit()
-                            try:
-                                run("gh", "auth", "status", silence_output=True)
-                            except:
-                                print("❌ You still need to authenticate yourself to GitHub CLI using 'gh auth login'.")
-                                exit()
 
                         # Within Git, the below "committer date" works to pretend the tag was there at the time of the commit.
                         #   - PyPI registers the time of release rather than the (fake) time of the tag, but interestingly,
@@ -453,11 +462,14 @@ def _main():
                         print(f"⏳ Releasing version {version_name}...")
                         committer_date = run_with_output("git", "show", "--format=%aD", end_commit).split("\n")[0].strip()  # You can normally use a shell pipe like "git show blablabla | head -1" but the subprocess package doesn't use a shell.
                         run("git", "tag", "-a", version_name, "-m", f"Release {version_name}\n\n{notes}", end_commit, extra_environment_variables={"GIT_COMMITTER_DATE": committer_date})  # https://stackoverflow.com/a/21741848
-                        run("git", "push", "origin", version_name, silence_output=True)
-                        if not workflow_exists_at_end_commit:  # This means the git push wasn't enough to run it yet.
-                            run("gh", "workflow", "run", WORKFLOW_NAME, "-f", f"tag={version_name}", silence_output=True)
-                        print(f"✅ Tagged and pushed version {version_name} retroactively with release notes.")
-                        input("🔎 Check PyPI and GitHub Actions to verify, and press Enter to continue with the next version.")
+                        run("git", "push", "origin", version_name, silence_output=True)  # Does not trigger anything. Merely pushes the tag.
+                        run("gh", "workflow", "run", WORKFLOW_NAME, "-f", f"tag={version_name}", "-f", f"project={DISTRIBUTION_NAME}", silence_output=True)
+                        print(f"✅ Tagged, pushed and released version {version_name} retroactively with release notes.")
+                        if i == len(update_ranges) - 1:
+                            print("🔎 Check PyPI and/or GitHub Actions to verify.")
+                        else:
+                            input("🔎 Check PyPI and/or GitHub Actions to verify, and press Enter to continue with the next version.")
+                        print("|")
 
                     return [Version(update_ranges[-1][-1].to_formatted())]  # NOTE: In the case that you are in backwards mode, you don't really care about the releases anyway. Just that there exists at least 1 now is enough.
 
@@ -489,8 +501,7 @@ def _main():
         if version_for_format is not None:
             # Impute new version if necessary
             if args.version is None:  # We know the version to format must at least be numeric then.
-                version_for_format_tuplified = version_for_format.to_numeric_tuple()
-                new_tag = Version("v" * (version_for_format.was_prefixed() and not args.no_v) + ".".join(map(str, version_for_format_tuplified[:-1] + (version_for_format_tuplified[-1] + 1,))))
+                new_tag = version_for_format.incremented()
             else:
                 new_tag = Version(args.version.strip())
 
@@ -519,7 +530,10 @@ def _main():
         print(f"✅ Generated release notes since {latest_release_tag.to_original() if latest_release_tag else 'initial commit'}:")
         print(quote(notes))
 
-        # Update all mentions of the version in the project files.
+        # Before any updates, validate that we could trigger a release.
+        validate_gh_install()
+
+        # Update all mentions of the version in the project files. TODO: Could expand this to ALL files in the repo. Search for the old version and replace it.
         def update_pyproject(version_name: str):
             content = PATH_TOML.read_text()
             new_content = re.sub(r"""version\s*=\s*["'][0-9a-zA-Z.\-+]+["']""", f'version = "{version_name}"', content)
@@ -546,11 +560,12 @@ def _main():
                 run("git", "tag", "-a", version_name, "-m", f"Release {version_name}\n\n{notes}")
                 run("git", "push",                         silence_output=True)
                 run("git", "push", "origin", version_name, silence_output=True)
+                run("gh", "workflow", "run", WORKFLOW_NAME, "-f", f"tag={version_name}", "-f", f"project={DISTRIBUTION_NAME}", silence_output=True)
                 print("="*50)
             except:
                 print(f"❌ Failed to save to Git.")
                 raise
-            print(f"✅ Committed, tagged, and pushed version {version_name} with release notes.")
+            print(f"✅ Committed, tagged, pushed and released version {version_name} with release notes.")
 
         new_tag_formatted = new_tag.to_formatted()
         if not user_says_yes(f"⚠️ Please confirm that you want to release the above details as follows:\n    📦 Package: {PACKAGE_NAME}\n    ⏳ Version: {new_tag_formatted}\n    🌐 PyPI: {DISTRIBUTION_NAME}\n", default_no=True):

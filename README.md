@@ -1,4 +1,5 @@
 <img src="doc/logo.png" alt="ReleaseMe">
+
 Publish your Python package in one simple command-line call: `releaseme`.
 
 Picture this: you have developed a Python package and want to mark the current commit as a proper milestone version and 
