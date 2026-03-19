@@ -1,17 +1,19 @@
-# version: 3.3
+# version: 4
 name: Publish to PyPI
 
 on:
-  push:
-    tags:  # Glob patterns for tags that will trigger the workflow when pushed.
-      - 'v[0-9]*'
-      - '[0-9]*'
+#  push:  # We no longer trigger on pushed tags because then old versions of the workflow could trigger if they exist on older commits that are then tagged retroactively.
+#    tags:
+#      - 'v[0-9]*'
+#      - '[0-9]*'
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release. Must exist and must match pyproject.toml version."
+        description: "Name of the tag to release. Must exist and must match pyproject.toml version."
         required: true
-
+      project:
+        description: "Name of the PyPI project to release to. Will override the project name in the TOML, if given."
+        required: false
 
 jobs:
   publish:
@@ -19,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # Note: when you push a tag, GitHub runs git checkout on that tag and runs the workflow if present there. Then 'on push' finds the tag and then this checkout happens (I guess somewhat redundantly). We have the workflow dispatch to circumvent this, but since that workflow dispatch is called on the current version of the workflow, we have to now specify to the checkout which commit you want.
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
       - name: Set up Python
@@ -62,7 +64,13 @@ jobs:
       
           sed -i "s/^version\\s*=\\s*.*?\\n/version = \"$TAG_VERSION\"\\n/" pyproject.toml
 
-      - name: Erase dependencies on source code    # If you don't do this, you will get an HTTP 400 status code :(
+      - name: Replace PyPI project name
+        if: "${{ github.event.inputs.project != '' }}"
+        run: |
+          PROJECT=${{ github.event.inputs.project }}
+          sed -i "s/^name\\s*=\\s*.*?\\n/name = \"$PROJECT\"\\n/" pyproject.toml
+
+      - name: Erase git+https dependencies         # If you don't do this, you will get an HTTP 400 status code from PyPI.
         run: sed -i "/git+https/d" pyproject.toml  # You don't need to escape a + for sed to see it as a literal.
 
       - name: Fix relative image links in README
