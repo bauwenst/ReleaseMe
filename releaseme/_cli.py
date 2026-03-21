@@ -5,6 +5,7 @@
 #   - There is currently no recourse for when a PyPI release fails, which is particularly a problem in the backfill
 #     releasing. The push could fail due to lack of internet, the GitHub Actions workflow could fail (e.g. you forgot to
 #     create a publisher on PyPI...) and so on, in which case you WILL have a tag matching the TOML but you WILL NOT have anything on PyPI. Rerunning should detect this.
+#   - README links are broken. You should add an id=... attribute that handles spaces for h1, h2 and h3.
 
 def _main():
     import argparse
@@ -222,7 +223,7 @@ def _main():
         else:  # For all inputs except literally no, return True.
             return input(question + " ([y]/n) ").lower() != "n"
 
-    WORKFLOW_VERSION_LATEST = Version("4.1")  # This can change
+    WORKFLOW_VERSION_LATEST = Version("4.2")  # This can change
     WORKFLOW_NAME           = "git-tag_to_pypi.yml"  # This cannot
     PATH_WORKFLOW = Path(".github/workflows/") / WORKFLOW_NAME
 
