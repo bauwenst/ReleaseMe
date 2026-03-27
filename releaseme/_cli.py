@@ -237,6 +237,7 @@ def _main():
             else:
                 return Version(first_line.removeprefix("# version: "))
 
+    COMMIT_PREFIX = "📣 ReleaseMe: "
     found_workflow_version = get_workflow_version()
     if found_workflow_version != WORKFLOW_VERSION_LATEST:
         if WORKFLOW_VERSION_LATEST < found_workflow_version:
@@ -259,7 +260,7 @@ def _main():
         # Commit
         print("="*52)
         run("git", "add", PATH_WORKFLOW.as_posix())
-        run("git", "commit", "-m", f"📣 ReleaseMe: {'Created' if workflow_created else 'Updated'} GitHub Actions workflow for PyPI publishing.")
+        run("git", "commit", "-m", COMMIT_PREFIX + f"{'Created' if workflow_created else 'Updated'} GitHub Actions workflow for PyPI publishing.")
         run("git", "push", silence_output=True)
         print("="*52)
 
@@ -295,7 +296,7 @@ def _main():
         commit_titles = [s.strip().split("\n")[0] for s in log.split(sep)]
         commit_titles.reverse()
         return "".join("- " + title + "\n"
-                       for title in commit_titles if title)
+                       for title in commit_titles if title and not title.startswith(COMMIT_PREFIX))
 
     def quote(s: str) -> str:
         return "\n".join("   | " + line for line in [""] + s.strip().split("\n") + [""])
