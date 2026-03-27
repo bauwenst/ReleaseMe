@@ -1,4 +1,4 @@
-# version: 4.1
+# version: 4.2
 # (This version will be checked by ReleaseMe.)
 name: Publish to PyPI
 
@@ -63,19 +63,64 @@ jobs:
             echo "Skipping version comparison (non-numeric)."
           fi
       
-          sed -i "s/^version\\s*=\\s*.*?\\n/version = \"$TAG_VERSION\"\\n/" pyproject.toml
+          sed -i "s/^version\\s*=\\s*.*/version = \"$TAG_VERSION\"/" pyproject.toml
 
       - name: "TOML: Replace PyPI project name"
         if: "${{ github.event.inputs.project != '' }}"
         run: |
           PROJECT=${{ github.event.inputs.project }}
-          sed -i "s/^name\\s*=\\s*.*?\\n/name = \"$PROJECT\"\\n/" pyproject.toml
+          sed -i "s/^name\\s*=\\s*.*/name = \"$PROJECT\"/" pyproject.toml
 
       - name: "TOML: Erase git+https dependencies"  # If you don't do this, you will get an HTTP 400 status code from PyPI.
         run: sed -i "/git+https/d" pyproject.toml   # You don't need to escape a + for sed to see it as a literal.
 
       - name: "TOML: Fix setuptools"  # If you don't do this, setuptools won't use [project].name.
-        run: sed -i 's/"setuptools"/"setuptools>=61"' pyproject.toml
+        run: sed -i 's/"setuptools"/"setuptools>=61"/' pyproject.toml
+
+      - name: "TOML: Fix hatchling"
+        run: |
+          # 1. Check for hatchling backend
+          if ! grep -q 'build-backend *= *"hatchling.build"' pyproject.toml; then
+            echo "No hatchling backend found, nothing to do."
+            exit 0
+          fi
+
+          # 2. Check if wheel target already defined
+          if grep -q '^\[tool\.hatch\.build\.targets\.wheel\]' pyproject.toml; then
+            echo "Wheel target already defined, nothing to do."
+            exit 0
+          fi
+
+          # 3. Check src directory exists
+          if [ ! -d "src" ]; then
+            echo "Error: 'src' directory not found."
+            exit 1
+          fi
+
+          # 4. Collect all subdirectories in src that have an init file
+          subdirs=$(find src -mindepth 1 -maxdepth 1 -type d -exec test -f "{}/__init__.py" \; -print | sort)
+          if [ -z "$subdirs" ]; then
+            echo "Error: no subdirectories found inside src/."
+            exit 1
+          fi
+
+          echo "Detected package folders:"
+          printf " - %s\n" $subdirs
+
+          # 5. Build TOML array
+          packages=""
+          for dir in $subdirs; do
+            name=$(basename "$dir")
+            packages="$packages\"./src/$name\", "
+          done
+          packages=$(printf "%s" "$packages" | sed 's/, $//')  # Remove trailing comma and space
+
+          # 6. Append configuration
+          cat >> pyproject.toml <<EOF
+
+          [tool.hatch.build.targets.wheel]
+          packages = [$packages]
+          EOF
 
       - name: "README: Fix relative image links"
         run: |
